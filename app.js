@@ -59,8 +59,30 @@ function renderProducts(productList) {
   });
 }
 
-// سلة التسوق (مصفوفة في الذاكرة فقط، بدون تخزين أو خادم)
+// سلة التسوق (تبدأ فارغة في الذاكرة، وتُحمَّل من localStorage عند تشغيل الصفحة)
 let cart = [];
+
+const CART_STORAGE_KEY = "ali-ecommerce-cart";
+
+// حفظ حالة السلة الحالية في localStorage
+function saveCartToStorage() {
+  try {
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+  } catch (error) {
+    // localStorage غير متاح (وضع التصفح الخاص مثلاً) - يستمر التطبيق بدون حفظ
+  }
+}
+
+// استرجاع السلة المحفوظة من localStorage، أو مصفوفة فارغة إذا لم توجد بيانات صالحة
+function loadCartFromStorage() {
+  try {
+    const stored = localStorage.getItem(CART_STORAGE_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
 
 // إضافة منتج إلى السلة عن طريق معرّفه، أو زيادة الكمية إذا كان موجودًا مسبقًا
 function addToCart(productId) {
@@ -200,15 +222,17 @@ function updateCartTotal() {
   totalEl.textContent = total.toLocaleString("en-US");
 }
 
-// تحديث كامل واجهة السلة بعد أي تغيير عليها
+// تحديث كامل واجهة السلة بعد أي تغيير عليها، وحفظ الحالة الجديدة
 function refreshCartUI() {
   updateCartCount();
   renderCart();
   updateCartTotal();
+  saveCartToStorage();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   renderProducts(products);
+  cart = loadCartFromStorage();
   refreshCartUI();
 
   const cartToggle = document.getElementById("cart-toggle");
