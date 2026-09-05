@@ -820,7 +820,189 @@ function renderCheckoutSuccess(order) {
   checkoutBody.appendChild(successBox);
 }
 
+// ==========================================================================
+// لوحة تحكم المتجر (Admin Dashboard) — أساس إدارة المنتجات
+// هذا قسم منفصل تمامًا عن واجهة العميل. مصفوفة products الأصلية تبقى كما هي
+// ولا تتأثر بأي عملية هنا؛ لوحة التحكم تدير نسخة إدارية خاصة بها فقط،
+// كخطوة أساس تمهيدية قبل ربطها فعليًا بواجهة العميل في مرحلة قادمة.
+// ==========================================================================
+
+const ADMIN_PRODUCTS_STORAGE_KEY = "ali-ecommerce-admin-products";
+
+let adminProducts = [];
+let editingAdminProductId = null;
+
+// التحقق من أن كائن المنتج يطابق البنية المطلوبة بالضبط (5 حقول، أنواع صحيحة)
+function isValidAdminProduct(product) {
+  return (
+    product &&
+    typeof product === "object" &&
+    typeof product.id === "number" &&
+    typeof product.name === "string" &&
+    product.name.trim() !== "" &&
+    typeof product.price === "number" &&
+    product.price > 0 &&
+    typeof product.category === "string" &&
+    product.category.trim() !== "" &&
+    typeof product.image === "string" &&
+    product.image.trim() !== ""
+  );
+}
+
+// تحميل منتجات لوحة التحكم من localStorage، وزرعها تلقائيًا من products الأصلية أول مرة
+function loadAdminProductsFromStorage() {
+  try {
+    const stored = localStorage.getItem(ADMIN_PRODUCTS_STORAGE_KEY);
+
+    if (!stored) {
+      const seeded = products.map((product) => ({ ...product }));
+      saveAdminProductsToStorage(seeded);
+      return seeded;
+    }
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return products.map((product) => ({ ...product }));
+
+    return parsed.filter(isValidAdminProduct);
+  } catch (error) {
+    return products.map((product) => ({ ...product }));
+  }
+}
+
+// حفظ منتجات لوحة التحكم في localStorage
+function saveAdminProductsToStorage(list) {
+  try {
+    localStorage.setItem(ADMIN_PRODUCTS_STORAGE_KEY, JSON.stringify(list));
+  } catch (error) {
+    // localStorage غير متاح - يستمر التطبيق بدون حفظ
+  }
+}
+
+// توليد معرّف رقمي جديد غير مستخدم لمنتج إداري جديد
+function generateAdminProductId() {
+  const maxId = adminProducts.reduce((max, product) => Math.max(max, product.id), 0);
+  return maxId + 1;
+}
+
+// عرض قائمة منتجات لوحة التحكم مع أزرار تعديل/حذف لكل منتج
+function renderAdminProducts() {
+  const listEl = document.getElementById("admin-products-list");
+  if (!listEl) return;
+
+  listEl.innerHTML = "";
+
+  if (adminProducts.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.className = "cart-empty";
+    emptyMessage.textContent = "لا توجد منتجات بعد";
+    listEl.appendChild(emptyMessage);
+    return;
+  }
+
+  adminProducts.forEach((product) => {
+    const row = document.createElement("div");
+    row.className = "admin-product-row";
+
+    const info = document.createElement("div");
+    info.className = "admin-product-info";
+    info.textContent = `${product.image} ${product.name} — ${product.category} — ${formatPrice(product.price)}`;
+
+    const actions = document.createElement("div");
+    actions.className = "admin-product-actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn-view-product-details";
+    editBtn.textContent = "تعديل";
+    editBtn.addEventListener("click", () => startEditAdminProduct(product.id));
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "btn-remove-item";
+    deleteBtn.textContent = "حذف";
+    deleteBtn.addEventListener("click", () => deleteAdminProduct(product.id));
+
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+
+    row.appendChild(info);
+    row.appendChild(actions);
+    listEl.appendChild(row);
+  });
+}
+
+// تعبئة النموذج ببيانات منتج موجود للتعديل عليه
+function startEditAdminProduct(productId) {
+  const product = adminProducts.find((p) => p.id === productId);
+  if (!product) return;
+
+  editingAdminProductId = productId;
+
+  document.getElementById("admin-product-id").value = product.id;
+  document.getElementById("admin-product-name").value = product.name;
+  document.getElementById("admin-product-price").value = product.price;
+  document.getElementById("admin-product-category").value = product.category;
+  document.getElementById("admin-product-image").value = product.image;
+
+  const submitBtn = document.getElementById("admin-form-submit");
+  const cancelBtn = document.getElementById("admin-form-cancel");
+  if (submitBtn) submitBtn.textContent = "تحديث المنتج";
+  if (cancelBtn) cancelBtn.hidden = false;
+}
+
+// إلغاء وضع التعديل وإعادة النموذج إلى حالة الإضافة الافتراضية
+function cancelAdminEdit() {
+  editingAdminProductId = null;
+
+  const form = document.getElementById("admin-product-form");
+  if (form) form.reset();
+  document.getElementById("admin-product-id").value = "";
+
+  const submitBtn = document.getElementById("admin-form-submit");
+  const cancelBtn = document.getElementById("admin-form-cancel");
+  if (submitBtn) submitBtn.textContent = "إضافة المنتج";
+  if (cancelBtn) cancelBtn.hidden = true;
+}
+
+// حذف منتج من لوحة التحكم عبر معرّفه
+function deleteAdminProduct(productId) {
+  adminProducts = adminProducts.filter((p) => p.id !== productId);
+  saveAdminProductsToStorage(adminProducts);
+
+  if (editingAdminProductId === productId) {
+    cancelAdminEdit();
+  }
+
+  renderAdminProducts();
+}
+
+// إضافة منتج جديد أو تحديث منتج موجود بناءً على بيانات النموذج
+function saveAdminProductForm(name, price, category, image) {
+  if (editingAdminProductId !== null) {
+    const product = adminProducts.find((p) => p.id === editingAdminProductId);
+    if (product) {
+      product.name = name;
+      product.price = price;
+      product.category = category;
+      product.image = image;
+    }
+  } else {
+    adminProducts.push({
+      id: generateAdminProductId(),
+      name,
+      price,
+      category,
+      image,
+    });
+  }
+
+  saveAdminProductsToStorage(adminProducts);
+  renderAdminProducts();
+  cancelAdminEdit();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  adminProducts = loadAdminProductsFromStorage();
   favorites = loadFavoritesFromStorage();
   populateCategoryFilter();
   applyProductFilters();
@@ -967,5 +1149,50 @@ document.addEventListener("DOMContentLoaded", () => {
         favoritesOverlay.hidden = true;
       }
     });
+  }
+
+  const adminDashboardLink = document.getElementById("admin-dashboard-link");
+  const backToStoreLink = document.getElementById("back-to-store");
+  const adminDashboardSection = document.getElementById("admin-dashboard");
+  const mainContent = document.getElementById("main-content");
+  const adminProductForm = document.getElementById("admin-product-form");
+  const adminFormCancelBtn = document.getElementById("admin-form-cancel");
+
+  if (adminDashboardLink && adminDashboardSection && mainContent) {
+    adminDashboardLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      mainContent.hidden = true;
+      adminDashboardSection.hidden = false;
+      renderAdminProducts();
+    });
+  }
+
+  if (backToStoreLink && adminDashboardSection && mainContent) {
+    backToStoreLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      adminDashboardSection.hidden = true;
+      mainContent.hidden = false;
+    });
+  }
+
+  if (adminProductForm) {
+    adminProductForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+
+      const name = document.getElementById("admin-product-name").value.trim();
+      const price = Number(document.getElementById("admin-product-price").value);
+      const category = document.getElementById("admin-product-category").value.trim();
+      const image = document.getElementById("admin-product-image").value.trim();
+
+      if (!name || !category || !image || !Number.isFinite(price) || price <= 0) {
+        return;
+      }
+
+      saveAdminProductForm(name, price, category, image);
+    });
+  }
+
+  if (adminFormCancelBtn) {
+    adminFormCancelBtn.addEventListener("click", cancelAdminEdit);
   }
 });

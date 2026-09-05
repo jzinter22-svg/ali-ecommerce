@@ -748,6 +748,82 @@ body {
   margin-top: 40px;
 }
 
+.admin-link {
+  color: #d35400;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.admin-link:hover {
+  text-decoration: underline;
+}
+
+/* Admin dashboard */
+.admin-dashboard {
+  padding: 50px 0;
+}
+
+.admin-dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 25px;
+}
+
+.admin-product-form {
+  max-width: 480px;
+  margin: 0 auto 40px;
+  background-color: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.admin-form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.admin-form-actions button {
+  flex: 1;
+}
+
+.admin-products-list {
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.admin-product-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background-color: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 12px 15px;
+  margin-bottom: 10px;
+}
+
+.admin-product-info {
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.admin-product-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-product-actions button {
+  width: auto;
+  padding: 6px 14px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .header-content {
