@@ -1,1 +1,60 @@
-// سيتم إضافة وظائف الجافاسكريبت (مثل عرض المنتجات وسلة التسوق) في المرحلة القادمة.
+// بيانات المنتجات (مصدر بيانات وهمي في الذاكرة، لا يوجد اتصال بخادم أو قاعدة بيانات)
+const products = [
+  { id: 1, name: "سماعات لاسلكية", price: 150, category: "إلكترونيات", image: "🎧" },
+  { id: 2, name: "ساعة ذكية", price: 320, category: "إلكترونيات", image: "⌚" },
+  { id: 3, name: "حقيبة ظهر", price: 90, category: "حقائب", image: "🎒" },
+  { id: 4, name: "كاميرا رقمية", price: 540, category: "إلكترونيات", image: "📷" },
+  { id: 5, name: "لوحة مفاتيح ميكانيكية", price: 210, category: "إلكترونيات", image: "⌨️" },
+  { id: 6, name: "نظارة شمسية", price: 60, category: "إكسسوارات", image: "🕶️" }
+];
+
+// إنشاء عنصر DOM واحد يمثل بطاقة منتج
+function createProductCard(product) {
+  const card = document.createElement("div");
+  card.className = "product-card";
+
+  const image = document.createElement("div");
+  image.className = "product-image";
+  image.textContent = product.image;
+
+  const name = document.createElement("h3");
+  name.className = "product-name";
+  name.textContent = product.name;
+
+  const category = document.createElement("p");
+  category.className = "product-category";
+  category.textContent = product.category;
+
+  const price = document.createElement("p");
+  price.className = "product-price";
+  price.textContent = `${product.price} ر.س`;
+
+  const addToCartBtn = document.createElement("button");
+  addToCartBtn.className = "btn-add-cart";
+  addToCartBtn.textContent = "أضف إلى السلة";
+
+  card.appendChild(image);
+  card.appendChild(name);
+  card.appendChild(category);
+  card.appendChild(price);
+  card.appendChild(addToCartBtn);
+
+  return card;
+}
+
+// عرض قائمة المنتجات داخل الحاوية في الصفحة
+function renderProducts(productList) {
+  const container = document.getElementById("products-container");
+  if (!container) return;
+
+  container.innerHTML = "";
+  productList.forEach((product) => {
+    container.appendChild(createProductCard(product));
+  });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderProducts(products);
+});
+
+// ملاحظة: وظائف سلة التسوق وإدارة المنتجات ستُضاف في مرحلة قادمة.
