@@ -73,12 +73,31 @@ function saveCartToStorage() {
   }
 }
 
-// استرجاع السلة المحفوظة من localStorage، أو مصفوفة فارغة إذا لم توجد بيانات صالحة
+// استرجاع السلة المحفوظة من localStorage وإعادة بنائها من مصدر الحقيقة الوحيد: مصفوفة products
+// لا يُعتمد على الاسم/السعر/الفئة/الصورة المخزّنة سابقًا، فقط على معرّف المنتج والكمية
 function loadCartFromStorage() {
   try {
     const stored = localStorage.getItem(CART_STORAGE_KEY);
     const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+
+    const quantitiesById = new Map();
+
+    parsed.forEach((storedItem) => {
+      if (!storedItem || typeof storedItem !== "object") return;
+
+      const product = products.find((p) => p.id === storedItem.id);
+      if (!product) return; // معرّف منتج غير موجود في الكتالوج الحالي - يُتجاهل
+
+      const quantity = Number(storedItem.quantity);
+      if (!Number.isInteger(quantity) || quantity < 1) return; // كمية غير صالحة - تُتجاهل
+
+      quantitiesById.set(product.id, (quantitiesById.get(product.id) || 0) + quantity);
+    });
+
+    return products
+      .filter((product) => quantitiesById.has(product.id))
+      .map((product) => ({ ...product, quantity: quantitiesById.get(product.id) }));
   } catch (error) {
     return [];
   }
