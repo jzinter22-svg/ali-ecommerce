@@ -1,0 +1,138 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+  color: #222;
+  background-color: #fafafa;
+  line-height: 1.6;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+/* Header */
+.site-header {
+  background-color: #ffffff;
+  border-bottom: 1px solid #e5e5e5;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding-top: 15px;
+  padding-bottom: 15px;
+}
+
+.logo {
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #d35400;
+}
+
+.main-nav ul {
+  list-style: none;
+  display: flex;
+  gap: 25px;
+  flex-wrap: wrap;
+}
+
+.main-nav a {
+  text-decoration: none;
+  color: #333;
+  font-size: 1rem;
+  transition: color 0.2s ease;
+}
+
+.main-nav a:hover {
+  color: #d35400;
+}
+
+/* Hero */
+.hero {
+  background-color: #fff3e9;
+  padding: 60px 0;
+  text-align: center;
+}
+
+.hero h1 {
+  font-size: 2.2rem;
+  margin-bottom: 15px;
+  color: #222;
+}
+
+.hero p {
+  font-size: 1.1rem;
+  color: #555;
+  max-width: 600px;
+  margin: 0 auto 25px;
+}
+
+.btn-primary {
+  background-color: #d35400;
+  color: #fff;
+  border: none;
+  padding: 12px 30px;
+  font-size: 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.btn-primary:hover {
+  background-color: #b34700;
+}
+
+/* Footer */
+.site-footer {
+  background-color: #222;
+  color: #eee;
+  text-align: center;
+  padding: 20px 0;
+  margin-top: 40px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .header-content {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .main-nav ul {
+    gap: 15px;
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .hero h1 {
+    font-size: 1.7rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-nav ul {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .hero {
+    padding: 40px 0;
+  }
+
+  .hero p {
+    font-size: 1rem;
+  }
+}
