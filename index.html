@@ -17,6 +17,7 @@
           <li><a href="#">الرئيسية</a></li>
           <li><a href="#">المنتجات</a></li>
           <li><a href="#">الأقسام</a></li>
+          <li><a href="#" id="favorites-toggle">المفضلة <span id="favorites-count" class="cart-count">0</span></a></li>
           <li><a href="#" id="orders-toggle">طلباتي</a></li>
           <li><a href="#" id="cart-toggle">سلة التسوق <span id="cart-count" class="cart-count">0</span></a></li>
         </ul>
@@ -94,6 +95,16 @@
         <button class="btn-close-cart" id="close-product-details" aria-label="إغلاق تفاصيل المنتج">×</button>
       </div>
       <div class="product-details-body" id="product-details-body"></div>
+    </div>
+  </div>
+
+  <div class="favorites-overlay" id="favorites-overlay" hidden>
+    <div class="cart-panel favorites-panel">
+      <div class="cart-panel-header">
+        <h2>المفضلة</h2>
+        <button class="btn-close-cart" id="close-favorites" aria-label="إغلاق المفضلة">×</button>
+      </div>
+      <div class="products-grid favorites-body" id="favorites-body"></div>
     </div>
   </div>
 

@@ -243,6 +243,54 @@ body {
   background-color: #fff3e9;
 }
 
+.btn-favorite {
+  width: 100%;
+  background: none;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  color: #666;
+  padding: 8px 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.btn-favorite:hover {
+  background-color: #f5f5f5;
+}
+
+.btn-favorite.active {
+  color: #d35400;
+  border-color: #d35400;
+  background-color: #fff3e9;
+}
+
+/* Favorites panel */
+.favorites-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 110;
+  padding: 20px;
+}
+
+.favorites-overlay[hidden] {
+  display: none;
+}
+
+.favorites-panel {
+  max-width: 700px;
+}
+
+.favorites-body {
+  overflow-y: auto;
+  padding: 20px;
+  gap: 20px;
+}
+
 /* Product details panel */
 .product-details-overlay {
   position: fixed;

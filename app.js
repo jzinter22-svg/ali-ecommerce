@@ -34,6 +34,11 @@ function createProductCard(product) {
   price.className = "product-price";
   price.textContent = formatPrice(product.price);
 
+  const favoriteBtn = document.createElement("button");
+  favoriteBtn.className = isFavorite(product.id) ? "btn-favorite active" : "btn-favorite";
+  favoriteBtn.textContent = isFavorite(product.id) ? "♥ إزالة من المفضلة" : "♡ أضف للمفضلة";
+  favoriteBtn.addEventListener("click", () => toggleFavorite(product.id));
+
   const addToCartBtn = document.createElement("button");
   addToCartBtn.className = "btn-add-cart";
   addToCartBtn.textContent = "أضف إلى السلة";
@@ -52,10 +57,92 @@ function createProductCard(product) {
   card.appendChild(name);
   card.appendChild(category);
   card.appendChild(price);
+  card.appendChild(favoriteBtn);
   card.appendChild(viewDetailsBtn);
   card.appendChild(addToCartBtn);
 
   return card;
+}
+
+// المفضلة (Favorites): قائمة معرّفات منتجات فقط، تُقارَن دائمًا مع مصفوفة products الحالية
+let favorites = [];
+
+const FAVORITES_STORAGE_KEY = "ali-ecommerce-favorites";
+
+// حفظ قائمة معرّفات المفضلة في localStorage
+function saveFavoritesToStorage() {
+  try {
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
+  } catch (error) {
+    // localStorage غير متاح - يستمر التطبيق بدون حفظ المفضلة
+  }
+}
+
+// استرجاع معرّفات المفضلة المحفوظة، والتحقق من صحتها مقابل مصفوفة products الحالية
+function loadFavoritesFromStorage() {
+  try {
+    const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((id) => products.some((product) => product.id === id));
+  } catch (error) {
+    return [];
+  }
+}
+
+// هل هذا المنتج ضمن المفضلة الحالية؟
+function isFavorite(productId) {
+  return favorites.includes(productId);
+}
+
+// إضافة/إزالة منتج من المفضلة حسب حالته الحالية
+function toggleFavorite(productId) {
+  if (favorites.includes(productId)) {
+    favorites = favorites.filter((id) => id !== productId);
+  } else {
+    favorites.push(productId);
+  }
+
+  saveFavoritesToStorage();
+  refreshFavoritesUI();
+}
+
+// تحديث عدد المنتجات الظاهر بجانب "المفضلة"
+function updateFavoritesCount() {
+  const favoritesCountEl = document.getElementById("favorites-count");
+  if (!favoritesCountEl) return;
+
+  favoritesCountEl.textContent = favorites.length;
+}
+
+// عرض منتجات المفضلة الحالية (باستخدام نفس بطاقة المنتج المستخدمة في الصفحة الرئيسية)
+function renderFavorites() {
+  const favoritesBody = document.getElementById("favorites-body");
+  if (!favoritesBody) return;
+
+  favoritesBody.innerHTML = "";
+
+  const favoriteProducts = products.filter((product) => favorites.includes(product.id));
+
+  if (favoriteProducts.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.className = "no-results";
+    emptyMessage.textContent = "لا توجد منتجات في المفضلة";
+    favoritesBody.appendChild(emptyMessage);
+    return;
+  }
+
+  favoriteProducts.forEach((product) => {
+    favoritesBody.appendChild(createProductCard(product));
+  });
+}
+
+// تحديث كل واجهات المفضلة بعد أي تغيير: العداد، نافذة المفضلة، وحالة الأزرار في الشبكة الرئيسية
+function refreshFavoritesUI() {
+  updateFavoritesCount();
+  renderFavorites();
+  applyProductFilters();
 }
 
 // عرض التفاصيل الكاملة لمنتج واحد عبر معرّفه، من مصدر الحقيقة الوحيد: مصفوفة products
@@ -91,6 +178,14 @@ function renderProductDetails(productId) {
   price.className = "product-details-price";
   price.textContent = formatPrice(product.price);
 
+  const favoriteBtn = document.createElement("button");
+  favoriteBtn.className = isFavorite(product.id) ? "btn-favorite active" : "btn-favorite";
+  favoriteBtn.textContent = isFavorite(product.id) ? "♥ إزالة من المفضلة" : "♡ أضف للمفضلة";
+  favoriteBtn.addEventListener("click", () => {
+    toggleFavorite(product.id);
+    renderProductDetails(product.id);
+  });
+
   const addToCartBtn = document.createElement("button");
   addToCartBtn.className = "btn-add-cart";
   addToCartBtn.textContent = "أضف إلى السلة";
@@ -100,6 +195,7 @@ function renderProductDetails(productId) {
   detailsBody.appendChild(name);
   detailsBody.appendChild(category);
   detailsBody.appendChild(price);
+  detailsBody.appendChild(favoriteBtn);
   detailsBody.appendChild(addToCartBtn);
 }
 
@@ -683,8 +779,10 @@ function renderCheckoutSuccess(order) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  favorites = loadFavoritesFromStorage();
   populateCategoryFilter();
   applyProductFilters();
+  updateFavoritesCount();
   cart = loadCartFromStorage();
   refreshCartUI();
 
@@ -735,6 +833,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const closeCheckoutBtn = document.getElementById("close-checkout");
   const productDetailsOverlay = document.getElementById("product-details-overlay");
   const closeProductDetailsBtn = document.getElementById("close-product-details");
+  const favoritesToggle = document.getElementById("favorites-toggle");
+  const favoritesOverlay = document.getElementById("favorites-overlay");
+  const closeFavoritesBtn = document.getElementById("close-favorites");
   const ordersToggle = document.getElementById("orders-toggle");
   const ordersOverlay = document.getElementById("orders-overlay");
   const closeOrdersBtn = document.getElementById("close-orders");
@@ -804,6 +905,24 @@ document.addEventListener("DOMContentLoaded", () => {
     productDetailsOverlay.addEventListener("click", (event) => {
       if (event.target === productDetailsOverlay) {
         productDetailsOverlay.hidden = true;
+      }
+    });
+  }
+
+  if (favoritesToggle && favoritesOverlay && closeFavoritesBtn) {
+    favoritesToggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      renderFavorites();
+      favoritesOverlay.hidden = false;
+    });
+
+    closeFavoritesBtn.addEventListener("click", () => {
+      favoritesOverlay.hidden = true;
+    });
+
+    favoritesOverlay.addEventListener("click", (event) => {
+      if (event.target === favoritesOverlay) {
+        favoritesOverlay.hidden = true;
       }
     });
   }
