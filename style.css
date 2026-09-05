@@ -211,6 +211,23 @@ body {
   margin-bottom: 15px;
 }
 
+.product-stock {
+  font-size: 0.85rem;
+  color: #2e7d32;
+  margin-bottom: 10px;
+}
+
+.product-stock.out-of-stock {
+  color: #b00020;
+  font-weight: bold;
+}
+
+.btn-add-cart:disabled,
+.btn-qty:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-add-cart {
   width: 100%;
   background-color: #d35400;
@@ -560,6 +577,16 @@ body {
   border-bottom: 1px solid #e5e5e5;
 }
 
+.checkout-stock-error {
+  background-color: #ffebee;
+  color: #b00020;
+  border: 1px solid #ffcdd2;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  margin-bottom: 15px;
+}
+
 .checkout-summary h3 {
   font-size: 1.05rem;
   margin-bottom: 10px;
@@ -772,6 +799,31 @@ body {
   margin-bottom: 25px;
 }
 
+.admin-tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 30px;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.admin-tab-link {
+  padding: 10px 16px;
+  color: #666;
+  text-decoration: none;
+  font-size: 0.95rem;
+  border-bottom: 2px solid transparent;
+}
+
+.admin-tab-link:hover {
+  color: #d35400;
+}
+
+.admin-tab-link.active {
+  color: #d35400;
+  border-bottom-color: #d35400;
+  font-weight: bold;
+}
+
 .admin-product-form {
   max-width: 480px;
   margin: 0 auto 40px;
@@ -829,6 +881,28 @@ body {
 .admin-visibility-badge.hidden {
   background-color: #f5f5f5;
   color: #888;
+}
+
+.admin-stock-badge {
+  font-size: 0.8rem;
+  padding: 3px 10px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.admin-stock-badge.normal {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.admin-stock-badge.low {
+  background-color: #fff3e0;
+  color: #e65100;
+}
+
+.admin-stock-badge.out {
+  background-color: #ffebee;
+  color: #b00020;
 }
 
 .admin-product-actions {

@@ -67,32 +67,47 @@
   <section class="admin-dashboard" id="admin-dashboard" hidden>
     <div class="container">
       <div class="admin-dashboard-header">
-        <h2 class="section-title">لوحة تحكم المتجر — إدارة المنتجات</h2>
+        <h2 class="section-title">لوحة تحكم المتجر</h2>
         <a href="#" id="back-to-store" class="admin-link">→ العودة إلى المتجر</a>
       </div>
 
-      <form id="admin-product-form" class="checkout-form admin-product-form">
-        <input type="hidden" id="admin-product-id">
+      <div class="admin-tabs">
+        <a href="#" id="admin-tab-products" class="admin-tab-link active">إدارة المنتجات</a>
+        <a href="#" id="admin-tab-orders" class="admin-tab-link">إدارة الطلبات <span id="admin-orders-count" class="cart-count">0</span></a>
+      </div>
 
-        <label for="admin-product-name">اسم المنتج</label>
-        <input type="text" id="admin-product-name" required>
+      <div id="admin-products-panel">
+        <form id="admin-product-form" class="checkout-form admin-product-form">
+          <input type="hidden" id="admin-product-id">
 
-        <label for="admin-product-price">السعر (د.ع)</label>
-        <input type="number" id="admin-product-price" min="1" step="1" required>
+          <label for="admin-product-name">اسم المنتج</label>
+          <input type="text" id="admin-product-name" required>
 
-        <label for="admin-product-category">الفئة</label>
-        <input type="text" id="admin-product-category" required>
+          <label for="admin-product-price">السعر (د.ع)</label>
+          <input type="number" id="admin-product-price" min="1" step="1" required>
 
-        <label for="admin-product-image">الصورة (رمز تعبيري)</label>
-        <input type="text" id="admin-product-image" required>
+          <label for="admin-product-category">الفئة</label>
+          <input type="text" id="admin-product-category" required>
 
-        <div class="admin-form-actions">
-          <button type="submit" class="btn-primary" id="admin-form-submit">إضافة المنتج</button>
-          <button type="button" class="btn-reset-filters" id="admin-form-cancel" hidden>إلغاء التعديل</button>
-        </div>
-      </form>
+          <label for="admin-product-image">الصورة (رمز تعبيري)</label>
+          <input type="text" id="admin-product-image" required>
 
-      <div class="admin-products-list" id="admin-products-list"></div>
+          <label for="admin-product-stock">المخزون (عدد القطع)</label>
+          <input type="number" id="admin-product-stock" min="0" step="1" required>
+
+          <div class="admin-form-actions">
+            <button type="submit" class="btn-primary" id="admin-form-submit">إضافة المنتج</button>
+            <button type="button" class="btn-reset-filters" id="admin-form-cancel" hidden>إلغاء التعديل</button>
+          </div>
+        </form>
+
+        <div class="admin-products-list" id="admin-products-list"></div>
+      </div>
+
+      <div id="admin-orders-panel" hidden>
+        <h3 id="admin-orders-panel-title" class="section-title">الطلبات</h3>
+        <div id="admin-orders-list"></div>
+      </div>
     </div>
   </section>
 

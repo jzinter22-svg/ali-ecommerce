@@ -34,6 +34,10 @@ function createProductCard(product) {
   price.className = "product-price";
   price.textContent = formatPrice(product.price);
 
+  const stockInfo = document.createElement("p");
+  stockInfo.className = product.stock > 0 ? "product-stock" : "product-stock out-of-stock";
+  stockInfo.textContent = product.stock > 0 ? `متوفر — ${product.stock} قطع` : "نفد المخزون";
+
   const favoriteBtn = document.createElement("button");
   favoriteBtn.className = isFavorite(product.id) ? "btn-favorite active" : "btn-favorite";
   favoriteBtn.textContent = isFavorite(product.id) ? "♥ إزالة من المفضلة" : "♡ أضف للمفضلة";
@@ -41,7 +45,8 @@ function createProductCard(product) {
 
   const addToCartBtn = document.createElement("button");
   addToCartBtn.className = "btn-add-cart";
-  addToCartBtn.textContent = "أضف إلى السلة";
+  addToCartBtn.textContent = product.stock > 0 ? "أضف إلى السلة" : "نفد المخزون";
+  addToCartBtn.disabled = product.stock <= 0;
   addToCartBtn.addEventListener("click", () => addToCart(product.id));
 
   const viewDetailsBtn = document.createElement("button");
@@ -57,6 +62,7 @@ function createProductCard(product) {
   card.appendChild(name);
   card.appendChild(category);
   card.appendChild(price);
+  card.appendChild(stockInfo);
   card.appendChild(favoriteBtn);
   card.appendChild(viewDetailsBtn);
   card.appendChild(addToCartBtn);
@@ -209,25 +215,36 @@ function renderProductDetails(productId) {
   increaseBtn.textContent = "+";
   increaseBtn.setAttribute("aria-label", "زيادة الكمية المطلوبة");
 
+  increaseBtn.disabled = productDetailsQuantity >= product.stock;
+
   decreaseBtn.addEventListener("click", () => {
     if (productDetailsQuantity > 1) {
       productDetailsQuantity -= 1;
       qtyValue.textContent = productDetailsQuantity;
+      increaseBtn.disabled = productDetailsQuantity >= product.stock;
     }
   });
 
   increaseBtn.addEventListener("click", () => {
-    productDetailsQuantity += 1;
-    qtyValue.textContent = productDetailsQuantity;
+    if (productDetailsQuantity < product.stock) {
+      productDetailsQuantity += 1;
+      qtyValue.textContent = productDetailsQuantity;
+      increaseBtn.disabled = productDetailsQuantity >= product.stock;
+    }
   });
 
   qtyControls.appendChild(decreaseBtn);
   qtyControls.appendChild(qtyValue);
   qtyControls.appendChild(increaseBtn);
 
+  const stockInfo = document.createElement("p");
+  stockInfo.className = product.stock > 0 ? "product-stock" : "product-stock out-of-stock";
+  stockInfo.textContent = product.stock > 0 ? `متوفر — ${product.stock} قطع` : "نفد المخزون";
+
   const addToCartBtn = document.createElement("button");
   addToCartBtn.className = "btn-add-cart";
-  addToCartBtn.textContent = "أضف إلى السلة";
+  addToCartBtn.textContent = product.stock > 0 ? "أضف إلى السلة" : "نفد المخزون";
+  addToCartBtn.disabled = product.stock <= 0;
   addToCartBtn.addEventListener("click", () => {
     for (let i = 0; i < productDetailsQuantity; i++) {
       addToCart(product.id);
@@ -238,6 +255,7 @@ function renderProductDetails(productId) {
   detailsBody.appendChild(name);
   detailsBody.appendChild(category);
   detailsBody.appendChild(price);
+  detailsBody.appendChild(stockInfo);
   detailsBody.appendChild(qtyControls);
   detailsBody.appendChild(favoriteBtn);
   detailsBody.appendChild(addToCartBtn);
@@ -367,11 +385,16 @@ function loadCartFromStorage() {
 }
 
 // إضافة منتج إلى السلة عن طريق معرّفه، أو زيادة الكمية إذا كان موجودًا مسبقًا
+// لا تتجاوز الكمية في السلة أبدًا المخزون المتاح فعليًا لهذا المنتج
 function addToCart(productId) {
   const product = adminProducts.find((p) => p.id === productId);
   if (!product) return;
 
   const cartItem = cart.find((item) => item.id === productId);
+  const currentQuantity = cartItem ? cartItem.quantity : 0;
+
+  if (currentQuantity >= product.stock) return; // لا مخزون كافٍ لإضافة قطعة أخرى
+
   if (cartItem) {
     cartItem.quantity += 1;
   } else {
@@ -571,6 +594,21 @@ function createOrderFromCart(customerName, customerPhone, customerAddress) {
   return order;
 }
 
+// خفض مخزون كل منتج بعد إنشاء الطلب بنجاح، بالكمية المطلوبة فعليًا في ذلك الطلب
+// لا يمس هذا سجل الطلب نفسه (لقطة ثابتة) - يؤثر فقط على الكتالوج الحيّ للمستقبل
+function decreaseStockAfterOrder(order) {
+  order.items.forEach((orderItem) => {
+    const product = adminProducts.find((p) => p.id === orderItem.id);
+    if (product) {
+      product.stock = Math.max(0, product.stock - orderItem.quantity);
+    }
+  });
+
+  saveAdminProductsToStorage(adminProducts);
+  populateCategoryFilter();
+  applyProductFilters();
+}
+
 // عرض سجل الطلبات السابقة كقائمة مختصرة (قراءة وعرض فقط، بدون أي تعديل على الطلبات)
 function renderOrderHistory() {
   const ordersBody = document.getElementById("orders-body");
@@ -697,6 +735,148 @@ function renderOrderDetails(orderId) {
   ordersBody.appendChild(backBtn);
 }
 
+// تحديث عدد الطلبات الظاهر بجانب "إدارة الطلبات" في لوحة التحكم
+function updateAdminOrdersCount(count) {
+  const countEl = document.getElementById("admin-orders-count");
+  if (countEl) countEl.textContent = count;
+}
+
+// عرض قائمة كل طلبات العملاء لغرض الإدارة (قراءة فقط) - نفس مخزن الطلبات الذي تقرأ منه "طلباتي"
+// الأحدث أولًا، بالاعتماد على createdAt، دون أي تعديل على المصفوفة المخزَّنة نفسها
+function renderAdminOrderList() {
+  const listEl = document.getElementById("admin-orders-list");
+  if (!listEl) return;
+
+  const titleEl = document.getElementById("admin-orders-panel-title");
+  if (titleEl) titleEl.textContent = "الطلبات";
+
+  listEl.innerHTML = "";
+
+  const orders = [...loadOrdersFromStorage()].sort(
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
+  );
+
+  updateAdminOrdersCount(orders.length);
+
+  if (orders.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.className = "cart-empty";
+    emptyMessage.textContent = "لا توجد طلبات حتى الآن";
+    listEl.appendChild(emptyMessage);
+    return;
+  }
+
+  orders.forEach((order) => {
+    const card = document.createElement("div");
+    card.className = "order-card";
+
+    const header = document.createElement("div");
+    header.className = "order-card-header";
+
+    const orderIdEl = document.createElement("span");
+    orderIdEl.className = "order-id";
+    orderIdEl.textContent = order.orderId;
+
+    const dateEl = document.createElement("span");
+    dateEl.className = "order-date";
+    dateEl.textContent = new Date(order.createdAt).toLocaleString("en-US");
+
+    header.appendChild(orderIdEl);
+    header.appendChild(dateEl);
+
+    const customerLine = document.createElement("p");
+    customerLine.className = "order-customer";
+    customerLine.textContent = order.customer.name;
+
+    const totalsLine = document.createElement("p");
+    totalsLine.className = "order-total";
+    totalsLine.textContent = `الإجمالي: ${formatPrice(order.total)}`;
+
+    const viewDetailsBtn = document.createElement("button");
+    viewDetailsBtn.type = "button";
+    viewDetailsBtn.className = "btn-view-order-details";
+    viewDetailsBtn.textContent = "عرض التفاصيل";
+    viewDetailsBtn.addEventListener("click", () => renderAdminOrderDetails(order.orderId));
+
+    card.appendChild(header);
+    card.appendChild(customerLine);
+    card.appendChild(totalsLine);
+    card.appendChild(viewDetailsBtn);
+
+    listEl.appendChild(card);
+  });
+}
+
+// عرض تفاصيل طلب واحد لغرض الإدارة، بالاعتماد حصرًا على لقطة الطلب المخزَّنة (order.items)
+// لا يُستخدم adminProducts هنا إطلاقًا: تغيّر السعر/الاسم/المخزون/الظهور الحالي لا يجب أن يغيّر طلبًا تاريخيًا
+function renderAdminOrderDetails(orderId) {
+  const listEl = document.getElementById("admin-orders-list");
+  if (!listEl) return;
+
+  const titleEl = document.getElementById("admin-orders-panel-title");
+  if (titleEl) titleEl.textContent = "تفاصيل الطلب";
+
+  listEl.innerHTML = "";
+
+  const order = loadOrdersFromStorage().find((o) => o.orderId === orderId);
+
+  if (!order) {
+    const notFoundMessage = document.createElement("p");
+    notFoundMessage.className = "cart-empty";
+    notFoundMessage.textContent = "الطلب غير موجود";
+    listEl.appendChild(notFoundMessage);
+  } else {
+    const details = document.createElement("div");
+    details.className = "order-details";
+
+    const header = document.createElement("div");
+    header.className = "order-card-header";
+
+    const orderIdEl = document.createElement("span");
+    orderIdEl.className = "order-id";
+    orderIdEl.textContent = order.orderId;
+
+    const dateEl = document.createElement("span");
+    dateEl.className = "order-date";
+    dateEl.textContent = new Date(order.createdAt).toLocaleString("en-US");
+
+    header.appendChild(orderIdEl);
+    header.appendChild(dateEl);
+
+    const customerLine = document.createElement("p");
+    customerLine.className = "order-customer";
+    customerLine.textContent = `${order.customer.name} — ${order.customer.phone} — ${order.customer.address}`;
+
+    const itemsList = document.createElement("div");
+    itemsList.className = "order-items";
+    order.items.forEach((item) => {
+      const itemLine = document.createElement("p");
+      itemLine.className = "order-item-line";
+      itemLine.textContent = `${item.name} — ${formatPrice(item.price)} × ${item.quantity} = ${formatPrice(item.subtotal)}`;
+      itemsList.appendChild(itemLine);
+    });
+
+    const totalsLine = document.createElement("p");
+    totalsLine.className = "order-total";
+    totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
+
+    details.appendChild(header);
+    details.appendChild(customerLine);
+    details.appendChild(itemsList);
+    details.appendChild(totalsLine);
+
+    listEl.appendChild(details);
+  }
+
+  const backBtn = document.createElement("button");
+  backBtn.type = "button";
+  backBtn.className = "btn-back-to-orders";
+  backBtn.textContent = "→ العودة إلى الطلبات";
+  backBtn.addEventListener("click", renderAdminOrderList);
+
+  listEl.appendChild(backBtn);
+}
+
 // عرض مراجعة الطلب (بنود السلة الحالية + نموذج بيانات العميل) داخل نافذة الطلب
 function renderCheckoutForm() {
   const checkoutBody = document.getElementById("checkout-body");
@@ -778,7 +958,30 @@ function renderCheckoutForm() {
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+
+    // إعادة قراءة الكتالوج الحالي من التخزين لضمان التحقق من أحدث مخزون متاح
+    // (مثال: تبويب آخر غيّر المخزون بعد فتح هذه النافذة)
+    adminProducts = loadAdminProductsFromStorage();
+
+    const hasStockIssue = cart.some((item) => {
+      const product = adminProducts.find((p) => p.id === item.id);
+      return !product || item.quantity > product.stock;
+    });
+
+    if (hasStockIssue) {
+      resyncCartWithCatalog();
+      renderCheckoutForm();
+
+      const errorMessage = document.createElement("p");
+      errorMessage.className = "checkout-stock-error";
+      errorMessage.textContent =
+        "تغيّرت الكمية المتوفرة لأحد المنتجات في سلتك. تم تحديث السلة تلقائيًا، الرجاء مراجعتها والمحاولة مجددًا.";
+      checkoutBody.insertBefore(errorMessage, checkoutBody.firstChild);
+      return;
+    }
+
     const order = createOrderFromCart(nameInput.value, phoneInput.value, addressInput.value);
+    decreaseStockAfterOrder(order);
     renderCheckoutSuccess(order);
   });
 
@@ -857,27 +1060,46 @@ function isValidAdminProduct(product) {
   );
 }
 
+// القيمة الافتراضية للمخزون عند عدم وجود قيمة صالحة
+const DEFAULT_STOCK = 10;
+
+// تطبيع قيمة المخزون: عدد صحيح غير سالب فقط، وإلا تُستبدل بالقيمة الافتراضية
+function normalizeStock(value, fallback = DEFAULT_STOCK) {
+  const num = Number(value);
+  return Number.isInteger(num) && num >= 0 ? num : fallback;
+}
+
 // تحميل منتجات لوحة التحكم من localStorage، وزرعها تلقائيًا من products الأصلية أول مرة
 // كل منتج يظهر للعملاء افتراضيًا (visible: true) ما لم يُخفِه المسؤول صراحةً
+// وكل منتج يحصل على مخزون رقمي صالح (stock)، مع تطبيع أي قيمة قديمة أو تالفة
 function loadAdminProductsFromStorage() {
   try {
     const stored = localStorage.getItem(ADMIN_PRODUCTS_STORAGE_KEY);
 
     if (!stored) {
-      const seeded = products.map((product) => ({ ...product, visible: true }));
+      const seeded = products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
       saveAdminProductsToStorage(seeded);
       return seeded;
     }
 
     const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return products.map((product) => ({ ...product, visible: true }));
+    if (!Array.isArray(parsed)) {
+      const fallback = products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
+      saveAdminProductsToStorage(fallback);
+      return fallback;
+    }
 
-    return parsed.filter(isValidAdminProduct).map((product) => ({
+    const normalized = parsed.filter(isValidAdminProduct).map((product) => ({
       ...product,
       visible: typeof product.visible === "boolean" ? product.visible : true,
+      stock: normalizeStock(product.stock),
     }));
+
+    // حفظ النسخة المطبَّعة فورًا حتى تعكس البيانات المخزَّنة القيم الصحيحة من الآن فصاعدًا
+    saveAdminProductsToStorage(normalized);
+    return normalized;
   } catch (error) {
-    return products.map((product) => ({ ...product, visible: true }));
+    return products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
   }
 }
 
@@ -894,6 +1116,13 @@ function saveAdminProductsToStorage(list) {
 function generateAdminProductId() {
   const maxId = adminProducts.reduce((max, product) => Math.max(max, product.id), 0);
   return maxId + 1;
+}
+
+// تصنيف حالة المخزون لأغراض العرض فقط (لا يُغيّر القيمة الفعلية)
+function getStockStatus(stock) {
+  if (stock === 0) return { label: "نفد المخزون", className: "out" };
+  if (stock <= 5) return { label: `مخزون منخفض — ${stock}`, className: "low" };
+  return { label: `متوفر — ${stock}`, className: "normal" };
 }
 
 // عرض قائمة منتجات لوحة التحكم مع أزرار تعديل/حذف لكل منتج
@@ -923,6 +1152,11 @@ function renderAdminProducts() {
     visibilityBadge.className = product.visible ? "admin-visibility-badge visible" : "admin-visibility-badge hidden";
     visibilityBadge.textContent = product.visible ? "ظاهر للعملاء" : "مخفي عن العملاء";
 
+    const stockStatus = getStockStatus(product.stock);
+    const stockBadge = document.createElement("span");
+    stockBadge.className = `admin-stock-badge ${stockStatus.className}`;
+    stockBadge.textContent = stockStatus.label;
+
     const actions = document.createElement("div");
     actions.className = "admin-product-actions";
 
@@ -950,6 +1184,7 @@ function renderAdminProducts() {
 
     row.appendChild(info);
     row.appendChild(visibilityBadge);
+    row.appendChild(stockBadge);
     row.appendChild(actions);
     listEl.appendChild(row);
   });
@@ -967,6 +1202,7 @@ function startEditAdminProduct(productId) {
   document.getElementById("admin-product-price").value = product.price;
   document.getElementById("admin-product-category").value = product.category;
   document.getElementById("admin-product-image").value = product.image;
+  document.getElementById("admin-product-stock").value = product.stock;
 
   const submitBtn = document.getElementById("admin-form-submit");
   const cancelBtn = document.getElementById("admin-form-cancel");
@@ -1013,7 +1249,7 @@ function deleteAdminProduct(productId) {
 }
 
 // إضافة منتج جديد أو تحديث منتج موجود بناءً على بيانات النموذج
-function saveAdminProductForm(name, price, category, image) {
+function saveAdminProductForm(name, price, category, image, stock) {
   if (editingAdminProductId !== null) {
     const product = adminProducts.find((p) => p.id === editingAdminProductId);
     if (product) {
@@ -1021,6 +1257,7 @@ function saveAdminProductForm(name, price, category, image) {
       product.price = price;
       product.category = category;
       product.image = image;
+      product.stock = stock;
     }
   } else {
     adminProducts.push({
@@ -1030,6 +1267,7 @@ function saveAdminProductForm(name, price, category, image) {
       category,
       image,
       visible: true,
+      stock,
     });
   }
 
@@ -1039,14 +1277,16 @@ function saveAdminProductForm(name, price, category, image) {
   refreshStorefrontAfterAdminChange();
 }
 
-// إزالة أي عنصر سلة يشير إلى منتج لم يعد موجودًا في adminProducts، وتحديث بيانات العناصر المتبقية (كالسعر) لتطابق الكتالوج الحالي
+// إزالة أي عنصر سلة يشير إلى منتج لم يعد موجودًا في adminProducts، وتحديث بيانات العناصر المتبقية
+// (كالسعر) لتطابق الكتالوج الحالي، مع تقييد الكمية بالمخزون المتاح فعليًا (وإزالة العنصر كليًا إذا نفد المخزون)
 function resyncCartWithCatalog() {
   cart = cart
     .filter((item) => adminProducts.some((product) => product.id === item.id))
     .map((item) => {
       const product = adminProducts.find((product) => product.id === item.id);
-      return { ...product, quantity: item.quantity };
-    });
+      return { ...product, quantity: Math.min(item.quantity, product.stock) };
+    })
+    .filter((item) => item.quantity > 0);
   refreshCartUI();
 }
 
@@ -1221,6 +1461,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const mainContent = document.getElementById("main-content");
   const adminProductForm = document.getElementById("admin-product-form");
   const adminFormCancelBtn = document.getElementById("admin-form-cancel");
+  const adminTabProducts = document.getElementById("admin-tab-products");
+  const adminTabOrders = document.getElementById("admin-tab-orders");
+  const adminProductsPanel = document.getElementById("admin-products-panel");
+  const adminOrdersPanel = document.getElementById("admin-orders-panel");
 
   if (adminDashboardLink && adminDashboardSection && mainContent) {
     adminDashboardLink.addEventListener("click", (event) => {
@@ -1228,6 +1472,33 @@ document.addEventListener("DOMContentLoaded", () => {
       mainContent.hidden = true;
       adminDashboardSection.hidden = false;
       renderAdminProducts();
+      updateAdminOrdersCount(loadOrdersFromStorage().length);
+
+      if (adminTabProducts && adminTabOrders && adminProductsPanel && adminOrdersPanel) {
+        adminTabProducts.classList.add("active");
+        adminTabOrders.classList.remove("active");
+        adminProductsPanel.hidden = false;
+        adminOrdersPanel.hidden = true;
+      }
+    });
+  }
+
+  if (adminTabProducts && adminTabOrders && adminProductsPanel && adminOrdersPanel) {
+    adminTabProducts.addEventListener("click", (event) => {
+      event.preventDefault();
+      adminTabProducts.classList.add("active");
+      adminTabOrders.classList.remove("active");
+      adminProductsPanel.hidden = false;
+      adminOrdersPanel.hidden = true;
+    });
+
+    adminTabOrders.addEventListener("click", (event) => {
+      event.preventDefault();
+      adminTabOrders.classList.add("active");
+      adminTabProducts.classList.remove("active");
+      adminProductsPanel.hidden = true;
+      adminOrdersPanel.hidden = false;
+      renderAdminOrderList();
     });
   }
 
@@ -1247,12 +1518,17 @@ document.addEventListener("DOMContentLoaded", () => {
       const price = Number(document.getElementById("admin-product-price").value);
       const category = document.getElementById("admin-product-category").value.trim();
       const image = document.getElementById("admin-product-image").value.trim();
+      const stock = Number(document.getElementById("admin-product-stock").value);
 
       if (!name || !category || !image || !Number.isFinite(price) || price <= 0) {
         return;
       }
 
-      saveAdminProductForm(name, price, category, image);
+      if (!Number.isInteger(stock) || stock < 0) {
+        return;
+      }
+
+      saveAdminProductForm(name, price, category, image, stock);
     });
   }
 
