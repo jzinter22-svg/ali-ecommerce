@@ -32,6 +32,7 @@ function createProductCard(product) {
   const addToCartBtn = document.createElement("button");
   addToCartBtn.className = "btn-add-cart";
   addToCartBtn.textContent = "أضف إلى السلة";
+  addToCartBtn.addEventListener("click", () => addToCart(product.id));
 
   card.appendChild(image);
   card.appendChild(name);
@@ -53,8 +54,36 @@ function renderProducts(productList) {
   });
 }
 
+// سلة التسوق (مصفوفة في الذاكرة فقط، بدون تخزين أو خادم)
+let cart = [];
+
+// إضافة منتج إلى السلة عن طريق معرّفه، أو زيادة الكمية إذا كان موجودًا مسبقًا
+function addToCart(productId) {
+  const product = products.find((p) => p.id === productId);
+  if (!product) return;
+
+  const cartItem = cart.find((item) => item.id === productId);
+  if (cartItem) {
+    cartItem.quantity += 1;
+  } else {
+    cart.push({ ...product, quantity: 1 });
+  }
+
+  updateCartCount();
+}
+
+// تحديث عدد القطع الظاهر بجانب "سلة التسوق"
+function updateCartCount() {
+  const cartCountEl = document.getElementById("cart-count");
+  if (!cartCountEl) return;
+
+  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+  cartCountEl.textContent = totalItems;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   renderProducts(products);
+  updateCartCount();
 });
 
-// ملاحظة: وظائف سلة التسوق وإدارة المنتجات ستُضاف في مرحلة قادمة.
+// ملاحظة: صفحة عرض السلة، حذف المنتجات، وإتمام الشراء ستُضاف في مرحلة قادمة.
