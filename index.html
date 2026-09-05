@@ -36,6 +36,15 @@
     <section class="products" id="products">
       <div class="container">
         <h2 class="section-title">منتجاتنا</h2>
+
+        <div class="product-filters">
+          <input type="text" id="product-search" class="search-input" placeholder="ابحث عن منتج...">
+          <select id="category-filter" class="category-select">
+            <option value="all">كل الفئات</option>
+          </select>
+          <button type="button" id="reset-filters" class="btn-reset-filters">إعادة تعيين</button>
+        </div>
+
         <div class="products-grid" id="products-container"></div>
       </div>
     </section>

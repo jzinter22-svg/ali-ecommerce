@@ -54,9 +54,49 @@ function renderProducts(productList) {
   if (!container) return;
 
   container.innerHTML = "";
+
+  if (productList.length === 0) {
+    const noResults = document.createElement("p");
+    noResults.className = "no-results";
+    noResults.textContent = "لا توجد منتجات مطابقة";
+    container.appendChild(noResults);
+    return;
+  }
+
   productList.forEach((product) => {
     container.appendChild(createProductCard(product));
   });
+}
+
+// حالة البحث والتصفية الحالية (لا تؤثر على مصفوفة products الأصلية)
+let productSearchTerm = "";
+let selectedProductCategory = "all";
+
+// ملء قائمة الفئات بالفئات الفعلية الموجودة في products، دون تكرار
+function populateCategoryFilter() {
+  const categorySelect = document.getElementById("category-filter");
+  if (!categorySelect) return;
+
+  const categories = [...new Set(products.map((product) => product.category))];
+  categories.forEach((category) => {
+    const option = document.createElement("option");
+    option.value = category;
+    option.textContent = category;
+    categorySelect.appendChild(option);
+  });
+}
+
+// تطبيق البحث بالاسم والتصفية بالفئة معًا على مصفوفة products الأصلية، ثم عرض النتيجة
+function applyProductFilters() {
+  const term = productSearchTerm.trim().toLowerCase();
+
+  const filtered = products.filter((product) => {
+    const matchesSearch = product.name.toLowerCase().includes(term);
+    const matchesCategory = selectedProductCategory === "all" || product.category === selectedProductCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  renderProducts(filtered);
 }
 
 // سلة التسوق (تبدأ فارغة في الذاكرة، وتُحمَّل من localStorage عند تشغيل الصفحة)
@@ -566,9 +606,38 @@ function renderCheckoutSuccess(order) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-  renderProducts(products);
+  populateCategoryFilter();
+  applyProductFilters();
   cart = loadCartFromStorage();
   refreshCartUI();
+
+  const productSearchInput = document.getElementById("product-search");
+  const categoryFilterSelect = document.getElementById("category-filter");
+  const resetFiltersBtn = document.getElementById("reset-filters");
+
+  if (productSearchInput) {
+    productSearchInput.addEventListener("input", (event) => {
+      productSearchTerm = event.target.value;
+      applyProductFilters();
+    });
+  }
+
+  if (categoryFilterSelect) {
+    categoryFilterSelect.addEventListener("change", (event) => {
+      selectedProductCategory = event.target.value;
+      applyProductFilters();
+    });
+  }
+
+  if (resetFiltersBtn) {
+    resetFiltersBtn.addEventListener("click", () => {
+      productSearchTerm = "";
+      selectedProductCategory = "all";
+      if (productSearchInput) productSearchInput.value = "";
+      if (categoryFilterSelect) categoryFilterSelect.value = "all";
+      applyProductFilters();
+    });
+  }
 
   const cartToggle = document.getElementById("cart-toggle");
   const cartOverlay = document.getElementById("cart-overlay");
