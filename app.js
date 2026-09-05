@@ -249,6 +249,131 @@ function refreshCartUI() {
   saveCartToStorage();
 }
 
+// عرض مراجعة الطلب (بنود السلة الحالية + نموذج بيانات العميل) داخل نافذة الطلب
+function renderCheckoutForm() {
+  const checkoutBody = document.getElementById("checkout-body");
+  if (!checkoutBody) return;
+
+  checkoutBody.innerHTML = "";
+
+  if (cart.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.className = "cart-empty";
+    emptyMessage.textContent = "السلة فارغة. أضف منتجات قبل إتمام الطلب.";
+    checkoutBody.appendChild(emptyMessage);
+    return;
+  }
+
+  const itemCount = cart.reduce((sum, item) => sum + item.quantity, 0);
+  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+  const summary = document.createElement("div");
+  summary.className = "checkout-summary";
+
+  const summaryTitle = document.createElement("h3");
+  summaryTitle.textContent = "ملخص الطلب";
+  summary.appendChild(summaryTitle);
+
+  cart.forEach((item) => {
+    const line = document.createElement("p");
+    line.className = "checkout-summary-line";
+    line.textContent = `${item.name} × ${item.quantity} = ${formatPrice(item.price * item.quantity)}`;
+    summary.appendChild(line);
+  });
+
+  const countLine = document.createElement("p");
+  countLine.className = "checkout-summary-total";
+  countLine.textContent = `عدد القطع: ${itemCount}`;
+  summary.appendChild(countLine);
+
+  const totalLine = document.createElement("p");
+  totalLine.className = "checkout-summary-total";
+  totalLine.textContent = `المجموع الفرعي: ${formatPrice(total)}`;
+  summary.appendChild(totalLine);
+
+  const form = document.createElement("form");
+  form.className = "checkout-form";
+  form.id = "checkout-form";
+
+  const nameLabel = document.createElement("label");
+  nameLabel.textContent = "الاسم الكامل";
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.name = "customerName";
+  nameInput.required = true;
+
+  const phoneLabel = document.createElement("label");
+  phoneLabel.textContent = "رقم الهاتف";
+  const phoneInput = document.createElement("input");
+  phoneInput.type = "tel";
+  phoneInput.name = "customerPhone";
+  phoneInput.required = true;
+
+  const addressLabel = document.createElement("label");
+  addressLabel.textContent = "عنوان التوصيل";
+  const addressInput = document.createElement("textarea");
+  addressInput.name = "customerAddress";
+  addressInput.required = true;
+
+  const submitBtn = document.createElement("button");
+  submitBtn.type = "submit";
+  submitBtn.className = "btn-primary";
+  submitBtn.textContent = "تأكيد الطلب";
+
+  form.appendChild(nameLabel);
+  form.appendChild(nameInput);
+  form.appendChild(phoneLabel);
+  form.appendChild(phoneInput);
+  form.appendChild(addressLabel);
+  form.appendChild(addressInput);
+  form.appendChild(submitBtn);
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    renderCheckoutSuccess(nameInput.value, phoneInput.value, addressInput.value, itemCount, total);
+  });
+
+  checkoutBody.appendChild(summary);
+  checkoutBody.appendChild(form);
+}
+
+// عرض رسالة نجاح الطلب بعد إرسال النموذج
+function renderCheckoutSuccess(customerName, customerPhone, customerAddress, itemCount, total) {
+  const checkoutBody = document.getElementById("checkout-body");
+  if (!checkoutBody) return;
+
+  checkoutBody.innerHTML = "";
+
+  const successBox = document.createElement("div");
+  successBox.className = "checkout-success";
+
+  const successTitle = document.createElement("h3");
+  successTitle.textContent = "✅ تم استلام طلبك بنجاح";
+  successBox.appendChild(successTitle);
+
+  const successMessage = document.createElement("p");
+  successMessage.textContent = `شكرًا ${customerName}، سنتواصل معك على ${customerPhone} لتأكيد التوصيل إلى: ${customerAddress}.`;
+  successBox.appendChild(successMessage);
+
+  const recap = document.createElement("p");
+  recap.className = "checkout-summary-total";
+  recap.textContent = `عدد القطع: ${itemCount} — الإجمالي: ${formatPrice(total)}`;
+  successBox.appendChild(recap);
+
+  const continueBtn = document.createElement("button");
+  continueBtn.type = "button";
+  continueBtn.className = "btn-primary";
+  continueBtn.textContent = "متابعة التسوق";
+  continueBtn.addEventListener("click", () => {
+    clearCart();
+    const checkoutOverlay = document.getElementById("checkout-overlay");
+    if (checkoutOverlay) checkoutOverlay.hidden = true;
+  });
+  successBox.appendChild(continueBtn);
+
+  checkoutBody.appendChild(successBox);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   renderProducts(products);
   cart = loadCartFromStorage();
@@ -258,6 +383,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const cartOverlay = document.getElementById("cart-overlay");
   const closeCartBtn = document.getElementById("close-cart");
   const clearCartBtn = document.getElementById("clear-cart");
+  const checkoutBtn = document.getElementById("checkout-btn");
+  const checkoutOverlay = document.getElementById("checkout-overlay");
+  const closeCheckoutBtn = document.getElementById("close-checkout");
 
   if (clearCartBtn) {
     clearCartBtn.addEventListener("click", clearCart);
@@ -279,6 +407,22 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
-});
 
-// ملاحظة: إتمام الشراء (checkout) سيُضاف في مرحلة قادمة.
+  if (checkoutBtn && checkoutOverlay && closeCheckoutBtn && cartOverlay) {
+    checkoutBtn.addEventListener("click", () => {
+      cartOverlay.hidden = true;
+      renderCheckoutForm();
+      checkoutOverlay.hidden = false;
+    });
+
+    closeCheckoutBtn.addEventListener("click", () => {
+      checkoutOverlay.hidden = true;
+    });
+
+    checkoutOverlay.addEventListener("click", (event) => {
+      if (event.target === checkoutOverlay) {
+        checkoutOverlay.hidden = true;
+      }
+    });
+  }
+});

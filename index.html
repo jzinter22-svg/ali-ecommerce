@@ -55,8 +55,19 @@
       <div class="cart-items" id="cart-items"></div>
       <div class="cart-footer">
         <p class="cart-total">الإجمالي: <span id="cart-total-amount">0</span> د.ع</p>
+        <button class="btn-checkout" id="checkout-btn">إتمام الطلب</button>
         <button class="btn-clear-cart" id="clear-cart">إفراغ السلة</button>
       </div>
+    </div>
+  </div>
+
+  <div class="checkout-overlay" id="checkout-overlay" hidden>
+    <div class="cart-panel checkout-panel">
+      <div class="cart-panel-header">
+        <h2>إتمام الطلب</h2>
+        <button class="btn-close-cart" id="close-checkout" aria-label="إغلاق نافذة الطلب">×</button>
+      </div>
+      <div class="checkout-body" id="checkout-body"></div>
     </div>
   </div>
 
