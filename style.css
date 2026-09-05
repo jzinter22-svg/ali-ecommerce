@@ -288,6 +288,13 @@ body {
   font-size: 0.9rem;
 }
 
+.cart-item-subtotal {
+  font-size: 0.9rem;
+  font-weight: bold;
+  color: #d35400;
+  margin-top: 6px;
+}
+
 .btn-remove-item {
   background: none;
   border: 1px solid #e5e5e5;

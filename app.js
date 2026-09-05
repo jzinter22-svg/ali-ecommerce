@@ -169,9 +169,14 @@ function renderCart() {
     qtyControls.appendChild(qtyValue);
     qtyControls.appendChild(increaseBtn);
 
+    const subtotal = document.createElement("p");
+    subtotal.className = "cart-item-subtotal";
+    subtotal.textContent = `المجموع: ${formatPrice(item.price * item.quantity)}`;
+
     info.appendChild(name);
     info.appendChild(meta);
     info.appendChild(qtyControls);
+    info.appendChild(subtotal);
 
     const removeBtn = document.createElement("button");
     removeBtn.className = "btn-remove-item";
