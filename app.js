@@ -146,11 +146,15 @@ function refreshFavoritesUI() {
 }
 
 // عرض التفاصيل الكاملة لمنتج واحد عبر معرّفه، من مصدر الحقيقة الوحيد: مصفوفة products
+// الكمية المختارة حاليًا في نافذة تفاصيل المنتج (تخص العرض الحالي فقط)
+let productDetailsQuantity = 1;
+
 function renderProductDetails(productId) {
   const detailsBody = document.getElementById("product-details-body");
   if (!detailsBody) return;
 
   detailsBody.innerHTML = "";
+  productDetailsQuantity = 1;
 
   const product = products.find((p) => p.id === productId);
 
@@ -186,15 +190,53 @@ function renderProductDetails(productId) {
     renderProductDetails(product.id);
   });
 
+  const qtyControls = document.createElement("div");
+  qtyControls.className = "product-details-qty";
+
+  const decreaseBtn = document.createElement("button");
+  decreaseBtn.className = "btn-qty";
+  decreaseBtn.textContent = "−";
+  decreaseBtn.setAttribute("aria-label", "إنقاص الكمية المطلوبة");
+
+  const qtyValue = document.createElement("span");
+  qtyValue.className = "qty-value";
+  qtyValue.textContent = productDetailsQuantity;
+
+  const increaseBtn = document.createElement("button");
+  increaseBtn.className = "btn-qty";
+  increaseBtn.textContent = "+";
+  increaseBtn.setAttribute("aria-label", "زيادة الكمية المطلوبة");
+
+  decreaseBtn.addEventListener("click", () => {
+    if (productDetailsQuantity > 1) {
+      productDetailsQuantity -= 1;
+      qtyValue.textContent = productDetailsQuantity;
+    }
+  });
+
+  increaseBtn.addEventListener("click", () => {
+    productDetailsQuantity += 1;
+    qtyValue.textContent = productDetailsQuantity;
+  });
+
+  qtyControls.appendChild(decreaseBtn);
+  qtyControls.appendChild(qtyValue);
+  qtyControls.appendChild(increaseBtn);
+
   const addToCartBtn = document.createElement("button");
   addToCartBtn.className = "btn-add-cart";
   addToCartBtn.textContent = "أضف إلى السلة";
-  addToCartBtn.addEventListener("click", () => addToCart(product.id));
+  addToCartBtn.addEventListener("click", () => {
+    for (let i = 0; i < productDetailsQuantity; i++) {
+      addToCart(product.id);
+    }
+  });
 
   detailsBody.appendChild(image);
   detailsBody.appendChild(name);
   detailsBody.appendChild(category);
   detailsBody.appendChild(price);
+  detailsBody.appendChild(qtyControls);
   detailsBody.appendChild(favoriteBtn);
   detailsBody.appendChild(addToCartBtn);
 }

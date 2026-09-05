@@ -341,6 +341,14 @@ body {
   margin-bottom: 18px;
 }
 
+.product-details-qty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
 /* Cart panel */
 .cart-overlay {
   position: fixed;
