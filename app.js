@@ -1,12 +1,17 @@
 // بيانات المنتجات (مصدر بيانات وهمي في الذاكرة، لا يوجد اتصال بخادم أو قاعدة بيانات)
 const products = [
-  { id: 1, name: "سماعات لاسلكية", price: 150, category: "إلكترونيات", image: "🎧" },
-  { id: 2, name: "ساعة ذكية", price: 320, category: "إلكترونيات", image: "⌚" },
-  { id: 3, name: "حقيبة ظهر", price: 90, category: "حقائب", image: "🎒" },
-  { id: 4, name: "كاميرا رقمية", price: 540, category: "إلكترونيات", image: "📷" },
-  { id: 5, name: "لوحة مفاتيح ميكانيكية", price: 210, category: "إلكترونيات", image: "⌨️" },
-  { id: 6, name: "نظارة شمسية", price: 60, category: "إكسسوارات", image: "🕶️" }
+  { id: 1, name: "سماعات لاسلكية", price: 55000, category: "إلكترونيات", image: "🎧" },
+  { id: 2, name: "ساعة ذكية", price: 120000, category: "إلكترونيات", image: "⌚" },
+  { id: 3, name: "حقيبة ظهر", price: 35000, category: "حقائب", image: "🎒" },
+  { id: 4, name: "كاميرا رقمية", price: 200000, category: "إلكترونيات", image: "📷" },
+  { id: 5, name: "لوحة مفاتيح ميكانيكية", price: 75000, category: "إلكترونيات", image: "⌨️" },
+  { id: 6, name: "نظارة شمسية", price: 25000, category: "إكسسوارات", image: "🕶️" }
 ];
+
+// تنسيق السعر بالدينار العراقي مع فواصل الآلاف
+function formatPrice(amount) {
+  return `${amount.toLocaleString("en-US")} د.ع`;
+}
 
 // إنشاء عنصر DOM واحد يمثل بطاقة منتج
 function createProductCard(product) {
@@ -27,7 +32,7 @@ function createProductCard(product) {
 
   const price = document.createElement("p");
   price.className = "product-price";
-  price.textContent = `${product.price} ر.س`;
+  price.textContent = formatPrice(product.price);
 
   const addToCartBtn = document.createElement("button");
   addToCartBtn.className = "btn-add-cart";
@@ -139,7 +144,7 @@ function renderCart() {
 
     const meta = document.createElement("p");
     meta.className = "cart-item-meta";
-    meta.textContent = `${item.price} ر.س للقطعة`;
+    meta.textContent = `${formatPrice(item.price)} للقطعة`;
 
     const qtyControls = document.createElement("div");
     qtyControls.className = "cart-item-qty";
@@ -187,7 +192,7 @@ function updateCartTotal() {
   if (!totalEl) return;
 
   const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  totalEl.textContent = total;
+  totalEl.textContent = total.toLocaleString("en-US");
 }
 
 // تحديث كامل واجهة السلة بعد أي تغيير عليها
