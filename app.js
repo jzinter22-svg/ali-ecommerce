@@ -249,6 +249,65 @@ function refreshCartUI() {
   saveCartToStorage();
 }
 
+// الطلبات (Orders): سجلات دائمة ومستقلة عن السلة، تُنشأ فقط عند تأكيد طلب
+// بخلاف السلة (قابلة للتعديل والإفراغ)، الطلب لقطة ثابتة لا تتغير بعد إنشائها
+const ORDERS_STORAGE_KEY = "ali-ecommerce-orders";
+
+// استرجاع كل الطلبات المحفوظة سابقًا من localStorage
+function loadOrdersFromStorage() {
+  try {
+    const stored = localStorage.getItem(ORDERS_STORAGE_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+// حفظ قائمة الطلبات كاملة في localStorage
+function saveOrdersToStorage(orders) {
+  try {
+    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  } catch (error) {
+    // localStorage غير متاح - يستمر التطبيق بدون حفظ الطلب
+  }
+}
+
+// توليد معرّف فريد لكل طلب
+function generateOrderId() {
+  return `ORD-${Date.now()}`;
+}
+
+// بناء سجل طلب مستقل (لقطة) من حالة السلة الحالية وبيانات العميل، ثم إضافته إلى سجل الطلبات الدائم
+function createOrderFromCart(customerName, customerPhone, customerAddress) {
+  const items = cart.map((item) => ({
+    id: item.id,
+    name: item.name,
+    price: item.price,
+    quantity: item.quantity,
+    subtotal: item.price * item.quantity,
+  }));
+
+  const order = {
+    orderId: generateOrderId(),
+    createdAt: new Date().toISOString(),
+    customer: {
+      name: customerName,
+      phone: customerPhone,
+      address: customerAddress,
+    },
+    items,
+    itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
+    total: items.reduce((sum, item) => sum + item.subtotal, 0),
+  };
+
+  const orders = loadOrdersFromStorage();
+  orders.push(order);
+  saveOrdersToStorage(orders);
+
+  return order;
+}
+
 // عرض مراجعة الطلب (بنود السلة الحالية + نموذج بيانات العميل) داخل نافذة الطلب
 function renderCheckoutForm() {
   const checkoutBody = document.getElementById("checkout-body");
@@ -330,15 +389,16 @@ function renderCheckoutForm() {
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    renderCheckoutSuccess(nameInput.value, phoneInput.value, addressInput.value, itemCount, total);
+    const order = createOrderFromCart(nameInput.value, phoneInput.value, addressInput.value);
+    renderCheckoutSuccess(order);
   });
 
   checkoutBody.appendChild(summary);
   checkoutBody.appendChild(form);
 }
 
-// عرض رسالة نجاح الطلب بعد إرسال النموذج
-function renderCheckoutSuccess(customerName, customerPhone, customerAddress, itemCount, total) {
+// عرض رسالة نجاح الطلب بعد إرسال النموذج، بالاعتماد على سجل الطلب المحفوظ (وليس السلة)
+function renderCheckoutSuccess(order) {
   const checkoutBody = document.getElementById("checkout-body");
   if (!checkoutBody) return;
 
@@ -351,13 +411,18 @@ function renderCheckoutSuccess(customerName, customerPhone, customerAddress, ite
   successTitle.textContent = "✅ تم استلام طلبك بنجاح";
   successBox.appendChild(successTitle);
 
+  const orderIdLine = document.createElement("p");
+  orderIdLine.className = "checkout-order-id";
+  orderIdLine.textContent = `رقم الطلب: ${order.orderId}`;
+  successBox.appendChild(orderIdLine);
+
   const successMessage = document.createElement("p");
-  successMessage.textContent = `شكرًا ${customerName}، سنتواصل معك على ${customerPhone} لتأكيد التوصيل إلى: ${customerAddress}.`;
+  successMessage.textContent = `شكرًا ${order.customer.name}، سنتواصل معك على ${order.customer.phone} لتأكيد التوصيل إلى: ${order.customer.address}.`;
   successBox.appendChild(successMessage);
 
   const recap = document.createElement("p");
   recap.className = "checkout-summary-total";
-  recap.textContent = `عدد القطع: ${itemCount} — الإجمالي: ${formatPrice(total)}`;
+  recap.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
   successBox.appendChild(recap);
 
   const continueBtn = document.createElement("button");
