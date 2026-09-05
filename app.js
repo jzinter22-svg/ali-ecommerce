@@ -64,7 +64,7 @@ function createProductCard(product) {
   return card;
 }
 
-// المفضلة (Favorites): قائمة معرّفات منتجات فقط، تُقارَن دائمًا مع مصفوفة products الحالية
+// المفضلة (Favorites): قائمة معرّفات منتجات فقط، تُقارَن دائمًا مع مصفوفة adminProducts الحيّة
 let favorites = [];
 
 const FAVORITES_STORAGE_KEY = "ali-ecommerce-favorites";
@@ -78,14 +78,14 @@ function saveFavoritesToStorage() {
   }
 }
 
-// استرجاع معرّفات المفضلة المحفوظة، والتحقق من صحتها مقابل مصفوفة products الحالية
+// استرجاع معرّفات المفضلة المحفوظة، والتحقق من صحتها مقابل مصفوفة adminProducts الحيّة
 function loadFavoritesFromStorage() {
   try {
     const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
     const parsed = stored ? JSON.parse(stored) : [];
     if (!Array.isArray(parsed)) return [];
 
-    return parsed.filter((id) => products.some((product) => product.id === id));
+    return parsed.filter((id) => adminProducts.some((product) => product.id === id));
   } catch (error) {
     return [];
   }
@@ -123,7 +123,7 @@ function renderFavorites() {
 
   favoritesBody.innerHTML = "";
 
-  const favoriteProducts = products.filter((product) => favorites.includes(product.id));
+  const favoriteProducts = adminProducts.filter((product) => favorites.includes(product.id));
 
   if (favoriteProducts.length === 0) {
     const emptyMessage = document.createElement("p");
@@ -145,7 +145,7 @@ function refreshFavoritesUI() {
   applyProductFilters();
 }
 
-// عرض التفاصيل الكاملة لمنتج واحد عبر معرّفه، من مصدر الحقيقة الوحيد: مصفوفة products
+// عرض التفاصيل الكاملة لمنتج واحد عبر معرّفه، من مصدر الحقيقة الوحيد: مصفوفة adminProducts الحيّة
 // الكمية المختارة حاليًا في نافذة تفاصيل المنتج (تخص العرض الحالي فقط)
 let productDetailsQuantity = 1;
 
@@ -156,7 +156,7 @@ function renderProductDetails(productId) {
   detailsBody.innerHTML = "";
   productDetailsQuantity = 1;
 
-  const product = products.find((p) => p.id === productId);
+  const product = adminProducts.find((p) => p.id === productId);
 
   if (!product) {
     const notFoundMessage = document.createElement("p");
@@ -261,7 +261,7 @@ function renderProducts(productList) {
   });
 }
 
-// حالة البحث والتصفية والترتيب الحالية (لا تؤثر على مصفوفة products الأصلية)
+// حالة البحث والتصفية والترتيب الحالية (لا تؤثر على مصفوفة adminProducts نفسها)
 let productSearchTerm = "";
 let selectedProductCategory = "all";
 let selectedSortOption = "default";
@@ -287,12 +287,16 @@ function sortProducts(productList, sortOption) {
   return sorted;
 }
 
-// ملء قائمة الفئات بالفئات الفعلية الموجودة في products، دون تكرار
+// ملء قائمة الفئات بالفئات الفعلية الموجودة في adminProducts، دون تكرار (تُعاد كلما تغيّر الكتالوج)
 function populateCategoryFilter() {
   const categorySelect = document.getElementById("category-filter");
   if (!categorySelect) return;
 
-  const categories = [...new Set(products.map((product) => product.category))];
+  Array.from(categorySelect.children)
+    .filter((option) => option.value !== "all")
+    .forEach((option) => option.remove());
+
+  const categories = [...new Set(adminProducts.map((product) => product.category))];
   categories.forEach((category) => {
     const option = document.createElement("option");
     option.value = category;
@@ -301,11 +305,11 @@ function populateCategoryFilter() {
   });
 }
 
-// تطبيق البحث بالاسم والتصفية بالفئة معًا على مصفوفة products الأصلية، ثم عرض النتيجة
+// تطبيق البحث بالاسم والتصفية بالفئة معًا على مصفوفة adminProducts الحيّة (مصدر المتجر الفعلي)، ثم عرض النتيجة
 function applyProductFilters() {
   const term = productSearchTerm.trim().toLowerCase();
 
-  const filtered = products.filter((product) => {
+  const filtered = adminProducts.filter((product) => {
     const matchesSearch = product.name.toLowerCase().includes(term);
     const matchesCategory = selectedProductCategory === "all" || product.category === selectedProductCategory;
     return matchesSearch && matchesCategory;
@@ -328,7 +332,7 @@ function saveCartToStorage() {
   }
 }
 
-// استرجاع السلة المحفوظة من localStorage وإعادة بنائها من مصدر الحقيقة الوحيد: مصفوفة products
+// استرجاع السلة المحفوظة من localStorage وإعادة بنائها من مصدر الحقيقة الوحيد: مصفوفة adminProducts الحيّة
 // لا يُعتمد على الاسم/السعر/الفئة/الصورة المخزّنة سابقًا، فقط على معرّف المنتج والكمية
 function loadCartFromStorage() {
   try {
@@ -341,7 +345,7 @@ function loadCartFromStorage() {
     parsed.forEach((storedItem) => {
       if (!storedItem || typeof storedItem !== "object") return;
 
-      const product = products.find((p) => p.id === storedItem.id);
+      const product = adminProducts.find((p) => p.id === storedItem.id);
       if (!product) return; // معرّف منتج غير موجود في الكتالوج الحالي - يُتجاهل
 
       const quantity = Number(storedItem.quantity);
@@ -350,7 +354,7 @@ function loadCartFromStorage() {
       quantitiesById.set(product.id, (quantitiesById.get(product.id) || 0) + quantity);
     });
 
-    return products
+    return adminProducts
       .filter((product) => quantitiesById.has(product.id))
       .map((product) => ({ ...product, quantity: quantitiesById.get(product.id) }));
   } catch (error) {
@@ -360,7 +364,7 @@ function loadCartFromStorage() {
 
 // إضافة منتج إلى السلة عن طريق معرّفه، أو زيادة الكمية إذا كان موجودًا مسبقًا
 function addToCart(productId) {
-  const product = products.find((p) => p.id === productId);
+  const product = adminProducts.find((p) => p.id === productId);
   if (!product) return;
 
   const cartItem = cart.find((item) => item.id === productId);
@@ -974,6 +978,7 @@ function deleteAdminProduct(productId) {
   }
 
   renderAdminProducts();
+  refreshStorefrontAfterAdminChange();
 }
 
 // إضافة منتج جديد أو تحديث منتج موجود بناءً على بيانات النموذج
@@ -999,6 +1004,33 @@ function saveAdminProductForm(name, price, category, image) {
   saveAdminProductsToStorage(adminProducts);
   renderAdminProducts();
   cancelAdminEdit();
+  refreshStorefrontAfterAdminChange();
+}
+
+// إزالة أي عنصر سلة يشير إلى منتج لم يعد موجودًا في adminProducts، وتحديث بيانات العناصر المتبقية (كالسعر) لتطابق الكتالوج الحالي
+function resyncCartWithCatalog() {
+  cart = cart
+    .filter((item) => adminProducts.some((product) => product.id === item.id))
+    .map((item) => {
+      const product = adminProducts.find((product) => product.id === item.id);
+      return { ...product, quantity: item.quantity };
+    });
+  refreshCartUI();
+}
+
+// إزالة أي معرّف مفضلة لم يعد يشير إلى منتج موجود في adminProducts
+function resyncFavoritesWithCatalog() {
+  favorites = favorites.filter((id) => adminProducts.some((product) => product.id === id));
+  saveFavoritesToStorage();
+  refreshFavoritesUI();
+}
+
+// إعادة مزامنة كل واجهات المتجر (الفئات، الشبكة، السلة، المفضلة) بعد أي تغيير من لوحة التحكم
+function refreshStorefrontAfterAdminChange() {
+  populateCategoryFilter();
+  applyProductFilters();
+  resyncCartWithCatalog();
+  resyncFavoritesWithCatalog();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
