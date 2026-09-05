@@ -308,10 +308,13 @@ function createOrderFromCart(customerName, customerPhone, customerAddress) {
   return order;
 }
 
-// عرض سجل الطلبات السابقة المحفوظة (قراءة وعرض فقط، بدون أي تعديل على الطلبات)
+// عرض سجل الطلبات السابقة كقائمة مختصرة (قراءة وعرض فقط، بدون أي تعديل على الطلبات)
 function renderOrderHistory() {
   const ordersBody = document.getElementById("orders-body");
   if (!ordersBody) return;
+
+  const panelTitle = document.getElementById("orders-panel-title");
+  if (panelTitle) panelTitle.textContent = "طلباتي السابقة";
 
   ordersBody.innerHTML = "";
 
@@ -344,6 +347,59 @@ function renderOrderHistory() {
     header.appendChild(orderIdEl);
     header.appendChild(dateEl);
 
+    const totalsLine = document.createElement("p");
+    totalsLine.className = "order-total";
+    totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
+
+    const viewDetailsBtn = document.createElement("button");
+    viewDetailsBtn.type = "button";
+    viewDetailsBtn.className = "btn-view-order-details";
+    viewDetailsBtn.textContent = "عرض التفاصيل";
+    viewDetailsBtn.addEventListener("click", () => renderOrderDetails(order.orderId));
+
+    card.appendChild(header);
+    card.appendChild(totalsLine);
+    card.appendChild(viewDetailsBtn);
+
+    ordersBody.appendChild(card);
+  });
+}
+
+// عرض تفاصيل طلب واحد بالكامل عبر معرّفه (orderId)، مع العودة إلى قائمة الطلبات
+function renderOrderDetails(orderId) {
+  const ordersBody = document.getElementById("orders-body");
+  if (!ordersBody) return;
+
+  const panelTitle = document.getElementById("orders-panel-title");
+  if (panelTitle) panelTitle.textContent = "تفاصيل الطلب";
+
+  ordersBody.innerHTML = "";
+
+  const order = loadOrdersFromStorage().find((o) => o.orderId === orderId);
+
+  if (!order) {
+    const notFoundMessage = document.createElement("p");
+    notFoundMessage.className = "cart-empty";
+    notFoundMessage.textContent = "تعذّر العثور على هذا الطلب";
+    ordersBody.appendChild(notFoundMessage);
+  } else {
+    const details = document.createElement("div");
+    details.className = "order-details";
+
+    const header = document.createElement("div");
+    header.className = "order-card-header";
+
+    const orderIdEl = document.createElement("span");
+    orderIdEl.className = "order-id";
+    orderIdEl.textContent = order.orderId;
+
+    const dateEl = document.createElement("span");
+    dateEl.className = "order-date";
+    dateEl.textContent = new Date(order.createdAt).toLocaleString("en-US");
+
+    header.appendChild(orderIdEl);
+    header.appendChild(dateEl);
+
     const customerLine = document.createElement("p");
     customerLine.className = "order-customer";
     customerLine.textContent = `${order.customer.name} — ${order.customer.phone} — ${order.customer.address}`;
@@ -361,13 +417,21 @@ function renderOrderHistory() {
     totalsLine.className = "order-total";
     totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
 
-    card.appendChild(header);
-    card.appendChild(customerLine);
-    card.appendChild(itemsList);
-    card.appendChild(totalsLine);
+    details.appendChild(header);
+    details.appendChild(customerLine);
+    details.appendChild(itemsList);
+    details.appendChild(totalsLine);
 
-    ordersBody.appendChild(card);
-  });
+    ordersBody.appendChild(details);
+  }
+
+  const backBtn = document.createElement("button");
+  backBtn.type = "button";
+  backBtn.className = "btn-back-to-orders";
+  backBtn.textContent = "→ العودة إلى طلباتي";
+  backBtn.addEventListener("click", renderOrderHistory);
+
+  ordersBody.appendChild(backBtn);
 }
 
 // عرض مراجعة الطلب (بنود السلة الحالية + نموذج بيانات العميل) داخل نافذة الطلب
