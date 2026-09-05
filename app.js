@@ -123,7 +123,9 @@ function renderFavorites() {
 
   favoritesBody.innerHTML = "";
 
-  const favoriteProducts = adminProducts.filter((product) => favorites.includes(product.id));
+  const favoriteProducts = adminProducts.filter(
+    (product) => favorites.includes(product.id) && product.visible !== false
+  );
 
   if (favoriteProducts.length === 0) {
     const emptyMessage = document.createElement("p");
@@ -296,7 +298,8 @@ function populateCategoryFilter() {
     .filter((option) => option.value !== "all")
     .forEach((option) => option.remove());
 
-  const categories = [...new Set(adminProducts.map((product) => product.category))];
+  const visibleProducts = adminProducts.filter((product) => product.visible !== false);
+  const categories = [...new Set(visibleProducts.map((product) => product.category))];
   categories.forEach((category) => {
     const option = document.createElement("option");
     option.value = category;
@@ -310,6 +313,7 @@ function applyProductFilters() {
   const term = productSearchTerm.trim().toLowerCase();
 
   const filtered = adminProducts.filter((product) => {
+    if (product.visible === false) return false;
     const matchesSearch = product.name.toLowerCase().includes(term);
     const matchesCategory = selectedProductCategory === "all" || product.category === selectedProductCategory;
     return matchesSearch && matchesCategory;
@@ -854,22 +858,26 @@ function isValidAdminProduct(product) {
 }
 
 // تحميل منتجات لوحة التحكم من localStorage، وزرعها تلقائيًا من products الأصلية أول مرة
+// كل منتج يظهر للعملاء افتراضيًا (visible: true) ما لم يُخفِه المسؤول صراحةً
 function loadAdminProductsFromStorage() {
   try {
     const stored = localStorage.getItem(ADMIN_PRODUCTS_STORAGE_KEY);
 
     if (!stored) {
-      const seeded = products.map((product) => ({ ...product }));
+      const seeded = products.map((product) => ({ ...product, visible: true }));
       saveAdminProductsToStorage(seeded);
       return seeded;
     }
 
     const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) return products.map((product) => ({ ...product }));
+    if (!Array.isArray(parsed)) return products.map((product) => ({ ...product, visible: true }));
 
-    return parsed.filter(isValidAdminProduct);
+    return parsed.filter(isValidAdminProduct).map((product) => ({
+      ...product,
+      visible: typeof product.visible === "boolean" ? product.visible : true,
+    }));
   } catch (error) {
-    return products.map((product) => ({ ...product }));
+    return products.map((product) => ({ ...product, visible: true }));
   }
 }
 
@@ -911,8 +919,18 @@ function renderAdminProducts() {
     info.className = "admin-product-info";
     info.textContent = `${product.image} ${product.name} — ${product.category} — ${formatPrice(product.price)}`;
 
+    const visibilityBadge = document.createElement("span");
+    visibilityBadge.className = product.visible ? "admin-visibility-badge visible" : "admin-visibility-badge hidden";
+    visibilityBadge.textContent = product.visible ? "ظاهر للعملاء" : "مخفي عن العملاء";
+
     const actions = document.createElement("div");
     actions.className = "admin-product-actions";
+
+    const visibilityBtn = document.createElement("button");
+    visibilityBtn.type = "button";
+    visibilityBtn.className = "btn-view-product-details";
+    visibilityBtn.textContent = product.visible ? "إخفاء عن المتجر" : "إظهار في المتجر";
+    visibilityBtn.addEventListener("click", () => toggleAdminProductVisibility(product.id));
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";
@@ -926,10 +944,12 @@ function renderAdminProducts() {
     deleteBtn.textContent = "حذف";
     deleteBtn.addEventListener("click", () => deleteAdminProduct(product.id));
 
+    actions.appendChild(visibilityBtn);
     actions.appendChild(editBtn);
     actions.appendChild(deleteBtn);
 
     row.appendChild(info);
+    row.appendChild(visibilityBadge);
     row.appendChild(actions);
     listEl.appendChild(row);
   });
@@ -968,6 +988,17 @@ function cancelAdminEdit() {
   if (cancelBtn) cancelBtn.hidden = true;
 }
 
+// تبديل ظهور منتج للعملاء دون حذفه من الكتالوج الإداري
+function toggleAdminProductVisibility(productId) {
+  const product = adminProducts.find((p) => p.id === productId);
+  if (!product) return;
+
+  product.visible = !product.visible;
+  saveAdminProductsToStorage(adminProducts);
+  renderAdminProducts();
+  refreshStorefrontAfterAdminChange();
+}
+
 // حذف منتج من لوحة التحكم عبر معرّفه
 function deleteAdminProduct(productId) {
   adminProducts = adminProducts.filter((p) => p.id !== productId);
@@ -998,6 +1029,7 @@ function saveAdminProductForm(name, price, category, image) {
       price,
       category,
       image,
+      visible: true,
     });
   }
 
