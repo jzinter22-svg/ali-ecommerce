@@ -308,6 +308,68 @@ function createOrderFromCart(customerName, customerPhone, customerAddress) {
   return order;
 }
 
+// عرض سجل الطلبات السابقة المحفوظة (قراءة وعرض فقط، بدون أي تعديل على الطلبات)
+function renderOrderHistory() {
+  const ordersBody = document.getElementById("orders-body");
+  if (!ordersBody) return;
+
+  ordersBody.innerHTML = "";
+
+  const orders = loadOrdersFromStorage();
+
+  if (orders.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.className = "cart-empty";
+    emptyMessage.textContent = "لا توجد طلبات سابقة";
+    ordersBody.appendChild(emptyMessage);
+    return;
+  }
+
+  // الأحدث أولًا
+  orders.slice().reverse().forEach((order) => {
+    const card = document.createElement("div");
+    card.className = "order-card";
+
+    const header = document.createElement("div");
+    header.className = "order-card-header";
+
+    const orderIdEl = document.createElement("span");
+    orderIdEl.className = "order-id";
+    orderIdEl.textContent = order.orderId;
+
+    const dateEl = document.createElement("span");
+    dateEl.className = "order-date";
+    dateEl.textContent = new Date(order.createdAt).toLocaleString("en-US");
+
+    header.appendChild(orderIdEl);
+    header.appendChild(dateEl);
+
+    const customerLine = document.createElement("p");
+    customerLine.className = "order-customer";
+    customerLine.textContent = `${order.customer.name} — ${order.customer.phone} — ${order.customer.address}`;
+
+    const itemsList = document.createElement("div");
+    itemsList.className = "order-items";
+    order.items.forEach((item) => {
+      const itemLine = document.createElement("p");
+      itemLine.className = "order-item-line";
+      itemLine.textContent = `${item.name} × ${item.quantity} = ${formatPrice(item.subtotal)}`;
+      itemsList.appendChild(itemLine);
+    });
+
+    const totalsLine = document.createElement("p");
+    totalsLine.className = "order-total";
+    totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
+
+    card.appendChild(header);
+    card.appendChild(customerLine);
+    card.appendChild(itemsList);
+    card.appendChild(totalsLine);
+
+    ordersBody.appendChild(card);
+  });
+}
+
 // عرض مراجعة الطلب (بنود السلة الحالية + نموذج بيانات العميل) داخل نافذة الطلب
 function renderCheckoutForm() {
   const checkoutBody = document.getElementById("checkout-body");
@@ -451,6 +513,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const checkoutBtn = document.getElementById("checkout-btn");
   const checkoutOverlay = document.getElementById("checkout-overlay");
   const closeCheckoutBtn = document.getElementById("close-checkout");
+  const ordersToggle = document.getElementById("orders-toggle");
+  const ordersOverlay = document.getElementById("orders-overlay");
+  const closeOrdersBtn = document.getElementById("close-orders");
 
   if (clearCartBtn) {
     clearCartBtn.addEventListener("click", clearCart);
@@ -487,6 +552,24 @@ document.addEventListener("DOMContentLoaded", () => {
     checkoutOverlay.addEventListener("click", (event) => {
       if (event.target === checkoutOverlay) {
         checkoutOverlay.hidden = true;
+      }
+    });
+  }
+
+  if (ordersToggle && ordersOverlay && closeOrdersBtn) {
+    ordersToggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      renderOrderHistory();
+      ordersOverlay.hidden = false;
+    });
+
+    closeOrdersBtn.addEventListener("click", () => {
+      ordersOverlay.hidden = true;
+    });
+
+    ordersOverlay.addEventListener("click", (event) => {
+      if (event.target === ordersOverlay) {
+        ordersOverlay.hidden = true;
       }
     });
   }

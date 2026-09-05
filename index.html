@@ -17,6 +17,7 @@
           <li><a href="#">الرئيسية</a></li>
           <li><a href="#">المنتجات</a></li>
           <li><a href="#">الأقسام</a></li>
+          <li><a href="#" id="orders-toggle">طلباتي</a></li>
           <li><a href="#" id="cart-toggle">سلة التسوق <span id="cart-count" class="cart-count">0</span></a></li>
         </ul>
       </nav>
@@ -68,6 +69,16 @@
         <button class="btn-close-cart" id="close-checkout" aria-label="إغلاق نافذة الطلب">×</button>
       </div>
       <div class="checkout-body" id="checkout-body"></div>
+    </div>
+  </div>
+
+  <div class="orders-overlay" id="orders-overlay" hidden>
+    <div class="cart-panel orders-panel">
+      <div class="cart-panel-header">
+        <h2>طلباتي السابقة</h2>
+        <button class="btn-close-cart" id="close-orders" aria-label="إغلاق طلباتي">×</button>
+      </div>
+      <div class="orders-body" id="orders-body"></div>
     </div>
   </div>
 
