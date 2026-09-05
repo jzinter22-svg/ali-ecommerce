@@ -69,7 +69,13 @@ function addToCart(productId) {
     cart.push({ ...product, quantity: 1 });
   }
 
-  updateCartCount();
+  refreshCartUI();
+}
+
+// إزالة منتج بالكامل من السلة عن طريق معرّفه
+function removeFromCart(productId) {
+  cart = cart.filter((item) => item.id !== productId);
+  refreshCartUI();
 }
 
 // تحديث عدد القطع الظاهر بجانب "سلة التسوق"
@@ -81,9 +87,96 @@ function updateCartCount() {
   cartCountEl.textContent = totalItems;
 }
 
+// عرض محتويات السلة داخل لوحة السلة
+function renderCart() {
+  const cartItemsEl = document.getElementById("cart-items");
+  if (!cartItemsEl) return;
+
+  cartItemsEl.innerHTML = "";
+
+  if (cart.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.className = "cart-empty";
+    emptyMessage.textContent = "السلة فارغة";
+    cartItemsEl.appendChild(emptyMessage);
+    return;
+  }
+
+  cart.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "cart-item";
+
+    const image = document.createElement("div");
+    image.className = "cart-item-image";
+    image.textContent = item.image;
+
+    const info = document.createElement("div");
+    info.className = "cart-item-info";
+
+    const name = document.createElement("p");
+    name.className = "cart-item-name";
+    name.textContent = item.name;
+
+    const meta = document.createElement("p");
+    meta.className = "cart-item-meta";
+    meta.textContent = `${item.quantity} × ${item.price} ر.س`;
+
+    info.appendChild(name);
+    info.appendChild(meta);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "btn-remove-item";
+    removeBtn.textContent = "إزالة";
+    removeBtn.addEventListener("click", () => removeFromCart(item.id));
+
+    row.appendChild(image);
+    row.appendChild(info);
+    row.appendChild(removeBtn);
+
+    cartItemsEl.appendChild(row);
+  });
+}
+
+// حساب وعرض إجمالي سعر السلة
+function updateCartTotal() {
+  const totalEl = document.getElementById("cart-total-amount");
+  if (!totalEl) return;
+
+  const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  totalEl.textContent = total;
+}
+
+// تحديث كامل واجهة السلة بعد أي تغيير عليها
+function refreshCartUI() {
+  updateCartCount();
+  renderCart();
+  updateCartTotal();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   renderProducts(products);
-  updateCartCount();
+  refreshCartUI();
+
+  const cartToggle = document.getElementById("cart-toggle");
+  const cartOverlay = document.getElementById("cart-overlay");
+  const closeCartBtn = document.getElementById("close-cart");
+
+  if (cartToggle && cartOverlay && closeCartBtn) {
+    cartToggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      cartOverlay.hidden = false;
+    });
+
+    closeCartBtn.addEventListener("click", () => {
+      cartOverlay.hidden = true;
+    });
+
+    cartOverlay.addEventListener("click", (event) => {
+      if (event.target === cartOverlay) {
+        cartOverlay.hidden = true;
+      }
+    });
+  }
 });
 
-// ملاحظة: صفحة عرض السلة، حذف المنتجات، وإتمام الشراء ستُضاف في مرحلة قادمة.
+// ملاحظة: إتمام الشراء (checkout) سيُضاف في مرحلة قادمة.

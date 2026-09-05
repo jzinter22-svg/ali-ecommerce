@@ -17,7 +17,7 @@
           <li><a href="#">الرئيسية</a></li>
           <li><a href="#">المنتجات</a></li>
           <li><a href="#">الأقسام</a></li>
-          <li><a href="#">سلة التسوق <span id="cart-count" class="cart-count">0</span></a></li>
+          <li><a href="#" id="cart-toggle">سلة التسوق <span id="cart-count" class="cart-count">0</span></a></li>
         </ul>
       </nav>
     </div>
@@ -45,6 +45,19 @@
       <p>&copy; متجر علي</p>
     </div>
   </footer>
+
+  <div class="cart-overlay" id="cart-overlay" hidden>
+    <div class="cart-panel">
+      <div class="cart-panel-header">
+        <h2>سلة التسوق</h2>
+        <button class="btn-close-cart" id="close-cart" aria-label="إغلاق السلة">×</button>
+      </div>
+      <div class="cart-items" id="cart-items"></div>
+      <div class="cart-footer">
+        <p class="cart-total">الإجمالي: <span id="cart-total-amount">0</span> ر.س</p>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
