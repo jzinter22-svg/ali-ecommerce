@@ -78,6 +78,26 @@ function removeFromCart(productId) {
   refreshCartUI();
 }
 
+// إنقاص كمية منتج بمقدار واحد، وإزالته إذا وصلت الكمية إلى صفر
+function decreaseQuantity(productId) {
+  const cartItem = cart.find((item) => item.id === productId);
+  if (!cartItem) return;
+
+  if (cartItem.quantity <= 1) {
+    removeFromCart(productId);
+    return;
+  }
+
+  cartItem.quantity -= 1;
+  refreshCartUI();
+}
+
+// إفراغ السلة بالكامل
+function clearCart() {
+  cart = [];
+  refreshCartUI();
+}
+
 // تحديث عدد القطع الظاهر بجانب "سلة التسوق"
 function updateCartCount() {
   const cartCountEl = document.getElementById("cart-count");
@@ -119,10 +139,34 @@ function renderCart() {
 
     const meta = document.createElement("p");
     meta.className = "cart-item-meta";
-    meta.textContent = `${item.quantity} × ${item.price} ر.س`;
+    meta.textContent = `${item.price} ر.س للقطعة`;
+
+    const qtyControls = document.createElement("div");
+    qtyControls.className = "cart-item-qty";
+
+    const decreaseBtn = document.createElement("button");
+    decreaseBtn.className = "btn-qty";
+    decreaseBtn.textContent = "−";
+    decreaseBtn.setAttribute("aria-label", "إنقاص الكمية");
+    decreaseBtn.addEventListener("click", () => decreaseQuantity(item.id));
+
+    const qtyValue = document.createElement("span");
+    qtyValue.className = "qty-value";
+    qtyValue.textContent = item.quantity;
+
+    const increaseBtn = document.createElement("button");
+    increaseBtn.className = "btn-qty";
+    increaseBtn.textContent = "+";
+    increaseBtn.setAttribute("aria-label", "زيادة الكمية");
+    increaseBtn.addEventListener("click", () => addToCart(item.id));
+
+    qtyControls.appendChild(decreaseBtn);
+    qtyControls.appendChild(qtyValue);
+    qtyControls.appendChild(increaseBtn);
 
     info.appendChild(name);
     info.appendChild(meta);
+    info.appendChild(qtyControls);
 
     const removeBtn = document.createElement("button");
     removeBtn.className = "btn-remove-item";
@@ -160,6 +204,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const cartToggle = document.getElementById("cart-toggle");
   const cartOverlay = document.getElementById("cart-overlay");
   const closeCartBtn = document.getElementById("close-cart");
+  const clearCartBtn = document.getElementById("clear-cart");
+
+  if (clearCartBtn) {
+    clearCartBtn.addEventListener("click", clearCart);
+  }
 
   if (cartToggle && cartOverlay && closeCartBtn) {
     cartToggle.addEventListener("click", (event) => {
