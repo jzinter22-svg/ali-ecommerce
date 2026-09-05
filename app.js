@@ -39,13 +39,68 @@ function createProductCard(product) {
   addToCartBtn.textContent = "أضف إلى السلة";
   addToCartBtn.addEventListener("click", () => addToCart(product.id));
 
+  const viewDetailsBtn = document.createElement("button");
+  viewDetailsBtn.className = "btn-view-product-details";
+  viewDetailsBtn.textContent = "عرض التفاصيل";
+  viewDetailsBtn.addEventListener("click", () => {
+    renderProductDetails(product.id);
+    const overlay = document.getElementById("product-details-overlay");
+    if (overlay) overlay.hidden = false;
+  });
+
   card.appendChild(image);
   card.appendChild(name);
   card.appendChild(category);
   card.appendChild(price);
+  card.appendChild(viewDetailsBtn);
   card.appendChild(addToCartBtn);
 
   return card;
+}
+
+// عرض التفاصيل الكاملة لمنتج واحد عبر معرّفه، من مصدر الحقيقة الوحيد: مصفوفة products
+function renderProductDetails(productId) {
+  const detailsBody = document.getElementById("product-details-body");
+  if (!detailsBody) return;
+
+  detailsBody.innerHTML = "";
+
+  const product = products.find((p) => p.id === productId);
+
+  if (!product) {
+    const notFoundMessage = document.createElement("p");
+    notFoundMessage.className = "cart-empty";
+    notFoundMessage.textContent = "تعذّر العثور على هذا المنتج";
+    detailsBody.appendChild(notFoundMessage);
+    return;
+  }
+
+  const image = document.createElement("div");
+  image.className = "product-details-image";
+  image.textContent = product.image;
+
+  const name = document.createElement("h3");
+  name.className = "product-details-name";
+  name.textContent = product.name;
+
+  const category = document.createElement("p");
+  category.className = "product-details-category";
+  category.textContent = product.category;
+
+  const price = document.createElement("p");
+  price.className = "product-details-price";
+  price.textContent = formatPrice(product.price);
+
+  const addToCartBtn = document.createElement("button");
+  addToCartBtn.className = "btn-add-cart";
+  addToCartBtn.textContent = "أضف إلى السلة";
+  addToCartBtn.addEventListener("click", () => addToCart(product.id));
+
+  detailsBody.appendChild(image);
+  detailsBody.appendChild(name);
+  detailsBody.appendChild(category);
+  detailsBody.appendChild(price);
+  detailsBody.appendChild(addToCartBtn);
 }
 
 // عرض قائمة المنتجات داخل الحاوية في الصفحة
@@ -678,6 +733,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const checkoutBtn = document.getElementById("checkout-btn");
   const checkoutOverlay = document.getElementById("checkout-overlay");
   const closeCheckoutBtn = document.getElementById("close-checkout");
+  const productDetailsOverlay = document.getElementById("product-details-overlay");
+  const closeProductDetailsBtn = document.getElementById("close-product-details");
   const ordersToggle = document.getElementById("orders-toggle");
   const ordersOverlay = document.getElementById("orders-overlay");
   const closeOrdersBtn = document.getElementById("close-orders");
@@ -735,6 +792,18 @@ document.addEventListener("DOMContentLoaded", () => {
     ordersOverlay.addEventListener("click", (event) => {
       if (event.target === ordersOverlay) {
         ordersOverlay.hidden = true;
+      }
+    });
+  }
+
+  if (productDetailsOverlay && closeProductDetailsBtn) {
+    closeProductDetailsBtn.addEventListener("click", () => {
+      productDetailsOverlay.hidden = true;
+    });
+
+    productDetailsOverlay.addEventListener("click", (event) => {
+      if (event.target === productDetailsOverlay) {
+        productDetailsOverlay.hidden = true;
       }
     });
   }
