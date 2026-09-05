@@ -1079,6 +1079,7 @@ function loadAdminProductsFromStorage() {
     if (!stored) {
       const seeded = products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
       saveAdminProductsToStorage(seeded);
+      ensureAdminProductIdCounter(seeded);
       return seeded;
     }
 
@@ -1086,6 +1087,7 @@ function loadAdminProductsFromStorage() {
     if (!Array.isArray(parsed)) {
       const fallback = products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
       saveAdminProductsToStorage(fallback);
+      ensureAdminProductIdCounter(fallback);
       return fallback;
     }
 
@@ -1097,9 +1099,12 @@ function loadAdminProductsFromStorage() {
 
     // حفظ النسخة المطبَّعة فورًا حتى تعكس البيانات المخزَّنة القيم الصحيحة من الآن فصاعدًا
     saveAdminProductsToStorage(normalized);
+    ensureAdminProductIdCounter(normalized);
     return normalized;
   } catch (error) {
-    return products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
+    const fallback = products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
+    ensureAdminProductIdCounter(fallback);
+    return fallback;
   }
 }
 
@@ -1112,10 +1117,51 @@ function saveAdminProductsToStorage(list) {
   }
 }
 
-// توليد معرّف رقمي جديد غير مستخدم لمنتج إداري جديد
+// عداد تصاعدي مستقل لمعرّفات المنتجات الإدارية، بحيث لا يُعاد استخدام أي معرّف بعد حذفه
+const ADMIN_NEXT_PRODUCT_ID_KEY = "ali-ecommerce-admin-next-product-id";
+
+// التأكد من أن عداد المعرّفات التالي لا يقل أبدًا عن أعلى معرّف موجود في القائمة المُحمَّلة حاليًا
+// يُستدعى عند كل تحميل للكتالوج (قبل أي إمكانية للحذف خلال الجلسة)، فلا يُشتق العداد لاحقًا من
+// مصفوفة قد تكون تقلّصت بسبب الحذف
+function ensureAdminProductIdCounter(list) {
+  try {
+    const stored = localStorage.getItem(ADMIN_NEXT_PRODUCT_ID_KEY);
+    const storedNext = Number(stored);
+    const currentNext = Number.isInteger(storedNext) && storedNext >= 1 ? storedNext : 1;
+
+    const maxId = list.reduce((max, product) => Math.max(max, product.id), 0);
+    const requiredNext = Math.max(currentNext, maxId + 1);
+
+    if (stored === null || requiredNext !== currentNext) {
+      localStorage.setItem(ADMIN_NEXT_PRODUCT_ID_KEY, String(requiredNext));
+    }
+  } catch (error) {
+    // localStorage غير متاح - يستمر التطبيق بدون ضبط العداد
+  }
+}
+
+// توليد معرّف رقمي جديد لمنتج إداري: عداد دائم مستقل تمامًا عن محتوى القائمة الحالية
+// (لا يُشتق من adminProducts هنا إطلاقًا)، فلا يتكرر معرّف حُذف سابقًا أبدًا
 function generateAdminProductId() {
-  const maxId = adminProducts.reduce((max, product) => Math.max(max, product.id), 0);
-  return maxId + 1;
+  let nextId = 1;
+
+  try {
+    const stored = localStorage.getItem(ADMIN_NEXT_PRODUCT_ID_KEY);
+    const parsed = Number(stored);
+    if (Number.isInteger(parsed) && parsed >= 1) {
+      nextId = parsed;
+    }
+  } catch (error) {
+    // localStorage غير متاح - يُستخدم أول معرّف افتراضي
+  }
+
+  try {
+    localStorage.setItem(ADMIN_NEXT_PRODUCT_ID_KEY, String(nextId + 1));
+  } catch (error) {
+    // localStorage غير متاح - يستمر التطبيق بدون حفظ العداد
+  }
+
+  return nextId;
 }
 
 // تصنيف حالة المخزون لأغراض العرض فقط (لا يُغيّر القيمة الفعلية)
