@@ -68,9 +68,31 @@ function renderProducts(productList) {
   });
 }
 
-// حالة البحث والتصفية الحالية (لا تؤثر على مصفوفة products الأصلية)
+// حالة البحث والتصفية والترتيب الحالية (لا تؤثر على مصفوفة products الأصلية)
 let productSearchTerm = "";
 let selectedProductCategory = "all";
+let selectedSortOption = "default";
+
+// ترتيب نسخة من قائمة المنتجات المُصفّاة دون التأثير على القائمة الأصلية
+function sortProducts(productList, sortOption) {
+  const sorted = [...productList];
+
+  switch (sortOption) {
+    case "price-asc":
+      sorted.sort((a, b) => a.price - b.price);
+      break;
+    case "price-desc":
+      sorted.sort((a, b) => b.price - a.price);
+      break;
+    case "name-asc":
+      sorted.sort((a, b) => a.name.localeCompare(b.name, "ar"));
+      break;
+    default:
+      break; // بلا ترتيب إضافي - كما وردت في نتيجة التصفية
+  }
+
+  return sorted;
+}
 
 // ملء قائمة الفئات بالفئات الفعلية الموجودة في products، دون تكرار
 function populateCategoryFilter() {
@@ -96,7 +118,7 @@ function applyProductFilters() {
     return matchesSearch && matchesCategory;
   });
 
-  renderProducts(filtered);
+  renderProducts(sortProducts(filtered, selectedSortOption));
 }
 
 // سلة التسوق (تبدأ فارغة في الذاكرة، وتُحمَّل من localStorage عند تشغيل الصفحة)
@@ -613,6 +635,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const productSearchInput = document.getElementById("product-search");
   const categoryFilterSelect = document.getElementById("category-filter");
+  const sortProductsSelect = document.getElementById("sort-products");
   const resetFiltersBtn = document.getElementById("reset-filters");
 
   if (productSearchInput) {
@@ -629,12 +652,21 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  if (sortProductsSelect) {
+    sortProductsSelect.addEventListener("change", (event) => {
+      selectedSortOption = event.target.value;
+      applyProductFilters();
+    });
+  }
+
   if (resetFiltersBtn) {
     resetFiltersBtn.addEventListener("click", () => {
       productSearchTerm = "";
       selectedProductCategory = "all";
+      selectedSortOption = "default";
       if (productSearchInput) productSearchInput.value = "";
       if (categoryFilterSelect) categoryFilterSelect.value = "all";
+      if (sortProductsSelect) sortProductsSelect.value = "default";
       applyProductFilters();
     });
   }
