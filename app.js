@@ -537,15 +537,49 @@ function refreshCartUI() {
 
 // الطلبات (Orders): سجلات دائمة ومستقلة عن السلة، تُنشأ فقط عند تأكيد طلب
 // بخلاف السلة (قابلة للتعديل والإفراغ)، الطلب لقطة ثابتة لا تتغير بعد إنشائها
+// باستثناء حقل الحالة (status) الذي يديره المسؤول لاحقًا دون المساس بأي بيانات أخرى في الطلب
 const ORDERS_STORAGE_KEY = "ali-ecommerce-orders";
 
-// استرجاع كل الطلبات المحفوظة سابقًا من localStorage
+// حالات الطلب المسموح بها وتسمياتها بالعربية
+const ORDER_STATUS_LABELS = {
+  new: "جديد",
+  processing: "قيد المعالجة",
+  shipped: "تم الشحن",
+  completed: "مكتمل",
+  cancelled: "ملغى",
+};
+
+const ORDER_STATUSES = Object.keys(ORDER_STATUS_LABELS);
+const DEFAULT_ORDER_STATUS = "new";
+
+// استرجاع كل الطلبات المحفوظة سابقًا من localStorage، مع تطبيع حقل الحالة فقط
+// (أي طلب بدون حالة صالحة يحصل على "جديد" افتراضيًا) دون أي تغيير على بقية بيانات الطلب
 function loadOrdersFromStorage() {
   try {
     const stored = localStorage.getItem(ORDERS_STORAGE_KEY);
     const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) {
+      ensureOrderIdCounter([]);
+      return [];
+    }
+
+    let didMigrate = false;
+    const normalized = parsed.map((order) => {
+      if (!order || typeof order !== "object") return order;
+      if (ORDER_STATUSES.includes(order.status)) return order;
+
+      didMigrate = true;
+      return { ...order, status: DEFAULT_ORDER_STATUS };
+    });
+
+    if (didMigrate) {
+      saveOrdersToStorage(normalized);
+    }
+
+    ensureOrderIdCounter(normalized);
+    return normalized;
   } catch (error) {
+    ensureOrderIdCounter([]);
     return [];
   }
 }
@@ -559,9 +593,60 @@ function saveOrdersToStorage(orders) {
   }
 }
 
-// توليد معرّف فريد لكل طلب
+// عداد تصاعدي مستقل لمعرّفات الطلبات، بنفس أسلوب عداد معرّفات المنتجات الإدارية
+const ORDERS_NEXT_ID_KEY = "ali-ecommerce-orders-next-id";
+
+// استخراج الجزء الرقمي من نهاية معرّف طلب (مثل الطابع الزمني في المعرّفات القديمة)، أو صفر إذا تعذّر ذلك
+function extractNumericOrderSuffix(orderId) {
+  if (typeof orderId !== "string") return 0;
+  const match = orderId.match(/(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
+
+// التأكد من أن عداد معرّفات الطلبات التالي لا يقل أبدًا عن أعلى معرّف رقمي موجود في القائمة المُحمَّلة حاليًا
+// يُستدعى عند كل تحميل للطلبات، فلا يُشتق العداد لاحقًا من قائمة قد لا تعكس كل المعرّفات المستخدمة سابقًا
+function ensureOrderIdCounter(list) {
+  try {
+    const stored = localStorage.getItem(ORDERS_NEXT_ID_KEY);
+    const storedNext = Number(stored);
+    const currentNext = Number.isInteger(storedNext) && storedNext >= 1 ? storedNext : 1;
+
+    const maxSuffix = list.reduce(
+      (max, order) => Math.max(max, extractNumericOrderSuffix(order && order.orderId)),
+      0
+    );
+    const requiredNext = Math.max(currentNext, maxSuffix + 1);
+
+    if (stored === null || requiredNext !== currentNext) {
+      localStorage.setItem(ORDERS_NEXT_ID_KEY, String(requiredNext));
+    }
+  } catch (error) {
+    // localStorage غير متاح - يستمر التطبيق بدون ضبط العداد
+  }
+}
+
+// توليد معرّف فريد لكل طلب: عداد دائم لا يعتمد على التوقيت، فلا يتكرر أبدًا حتى عند إنشاء طلبين
+// في نفس اللحظة تمامًا (وهي الثغرة التي كانت موجودة في التوليد المعتمد على Date.now() فقط)
 function generateOrderId() {
-  return `ORD-${Date.now()}`;
+  let nextId = 1;
+
+  try {
+    const stored = localStorage.getItem(ORDERS_NEXT_ID_KEY);
+    const parsed = Number(stored);
+    if (Number.isInteger(parsed) && parsed >= 1) {
+      nextId = parsed;
+    }
+  } catch (error) {
+    // localStorage غير متاح - يُستخدم أول معرّف افتراضي
+  }
+
+  try {
+    localStorage.setItem(ORDERS_NEXT_ID_KEY, String(nextId + 1));
+  } catch (error) {
+    // localStorage غير متاح - يستمر التطبيق بدون حفظ العداد
+  }
+
+  return `ORD-${nextId}`;
 }
 
 // بناء سجل طلب مستقل (لقطة) من حالة السلة الحالية وبيانات العميل، ثم إضافته إلى سجل الطلبات الدائم
@@ -585,6 +670,7 @@ function createOrderFromCart(customerName, customerPhone, customerAddress) {
     items,
     itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
     total: items.reduce((sum, item) => sum + item.subtotal, 0),
+    status: DEFAULT_ORDER_STATUS,
   };
 
   const orders = loadOrdersFromStorage();
@@ -592,6 +678,18 @@ function createOrderFromCart(customerName, customerPhone, customerAddress) {
   saveOrdersToStorage(orders);
 
   return order;
+}
+
+// تحديث حالة طلب واحد فقط عبر معرّفه، دون المساس بأي حقل آخر (العناصر، العميل، الإجمالي، إلخ)
+function updateOrderStatus(orderId, newStatus) {
+  if (!ORDER_STATUSES.includes(newStatus)) return;
+
+  const orders = loadOrdersFromStorage();
+  const order = orders.find((o) => o.orderId === orderId);
+  if (!order) return;
+
+  order.status = newStatus;
+  saveOrdersToStorage(orders);
 }
 
 // خفض مخزون كل منتج بعد إنشاء الطلب بنجاح، بالكمية المطلوبة فعليًا في ذلك الطلب
@@ -648,6 +746,10 @@ function renderOrderHistory() {
     header.appendChild(orderIdEl);
     header.appendChild(dateEl);
 
+    const statusLine = document.createElement("p");
+    statusLine.className = "order-status";
+    statusLine.textContent = `الحالة: ${ORDER_STATUS_LABELS[order.status] || ORDER_STATUS_LABELS[DEFAULT_ORDER_STATUS]}`;
+
     const totalsLine = document.createElement("p");
     totalsLine.className = "order-total";
     totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
@@ -659,6 +761,7 @@ function renderOrderHistory() {
     viewDetailsBtn.addEventListener("click", () => renderOrderDetails(order.orderId));
 
     card.appendChild(header);
+    card.appendChild(statusLine);
     card.appendChild(totalsLine);
     card.appendChild(viewDetailsBtn);
 
@@ -701,6 +804,10 @@ function renderOrderDetails(orderId) {
     header.appendChild(orderIdEl);
     header.appendChild(dateEl);
 
+    const statusLine = document.createElement("p");
+    statusLine.className = "order-status";
+    statusLine.textContent = `الحالة: ${ORDER_STATUS_LABELS[order.status] || ORDER_STATUS_LABELS[DEFAULT_ORDER_STATUS]}`;
+
     const customerLine = document.createElement("p");
     customerLine.className = "order-customer";
     customerLine.textContent = `${order.customer.name} — ${order.customer.phone} — ${order.customer.address}`;
@@ -719,6 +826,7 @@ function renderOrderDetails(orderId) {
     totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
 
     details.appendChild(header);
+    details.appendChild(statusLine);
     details.appendChild(customerLine);
     details.appendChild(itemsList);
     details.appendChild(totalsLine);
@@ -788,6 +896,10 @@ function renderAdminOrderList() {
     customerLine.className = "order-customer";
     customerLine.textContent = order.customer.name;
 
+    const statusLine = document.createElement("p");
+    statusLine.className = "order-status";
+    statusLine.textContent = `الحالة: ${ORDER_STATUS_LABELS[order.status] || ORDER_STATUS_LABELS[DEFAULT_ORDER_STATUS]}`;
+
     const totalsLine = document.createElement("p");
     totalsLine.className = "order-total";
     totalsLine.textContent = `الإجمالي: ${formatPrice(order.total)}`;
@@ -800,6 +912,7 @@ function renderAdminOrderList() {
 
     card.appendChild(header);
     card.appendChild(customerLine);
+    card.appendChild(statusLine);
     card.appendChild(totalsLine);
     card.appendChild(viewDetailsBtn);
 
@@ -843,6 +956,30 @@ function renderAdminOrderDetails(orderId) {
     header.appendChild(orderIdEl);
     header.appendChild(dateEl);
 
+    const statusRow = document.createElement("div");
+    statusRow.className = "order-status-row";
+
+    const statusLabel = document.createElement("span");
+    statusLabel.className = "order-status";
+    statusLabel.textContent = `الحالة الحالية: ${ORDER_STATUS_LABELS[order.status] || ORDER_STATUS_LABELS[DEFAULT_ORDER_STATUS]}`;
+
+    const statusSelect = document.createElement("select");
+    statusSelect.className = "admin-order-status-select";
+    ORDER_STATUSES.forEach((statusKey) => {
+      const option = document.createElement("option");
+      option.value = statusKey;
+      option.textContent = ORDER_STATUS_LABELS[statusKey];
+      if (statusKey === order.status) option.selected = true;
+      statusSelect.appendChild(option);
+    });
+    statusSelect.addEventListener("change", (event) => {
+      updateOrderStatus(order.orderId, event.target.value);
+      renderAdminOrderDetails(order.orderId);
+    });
+
+    statusRow.appendChild(statusLabel);
+    statusRow.appendChild(statusSelect);
+
     const customerLine = document.createElement("p");
     customerLine.className = "order-customer";
     customerLine.textContent = `${order.customer.name} — ${order.customer.phone} — ${order.customer.address}`;
@@ -861,6 +998,7 @@ function renderAdminOrderDetails(orderId) {
     totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
 
     details.appendChild(header);
+    details.appendChild(statusRow);
     details.appendChild(customerLine);
     details.appendChild(itemsList);
     details.appendChild(totalsLine);

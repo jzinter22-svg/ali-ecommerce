@@ -728,6 +728,31 @@ body {
   font-weight: bold;
 }
 
+.order-status {
+  font-size: 0.85rem;
+  color: #d35400;
+  font-weight: bold;
+}
+
+.order-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.admin-order-status-select {
+  padding: 6px 10px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  background-color: #fff;
+  cursor: pointer;
+}
+
 .btn-view-order-details {
   width: 100%;
   margin-top: 8px;
