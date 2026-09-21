@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<title>اختبار الاتصال بـ Supabase</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; background: #f7f7f7; }
+  h1 { font-size: 20px; }
+  #setup { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  #setup label { display: block; font-size: 13px; color: #555; margin-top: 10px; }
+  #setup input { width: 100%; box-sizing: border-box; padding: 8px; font-size: 14px; margin-top: 4px; }
+  #setup button { margin-top: 14px; padding: 10px 20px; font-size: 14px; cursor: pointer; }
+  #results { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; }
+  .line { padding: 6px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+  .pass { color: #0a7f3f; }
+  .fail { color: #c0392b; font-weight: bold; }
+  .info { color: #555; }
+  #summary { margin-top: 16px; font-weight: bold; font-size: 16px; }
+</style>
+</head>
+<body>
+  <h1>اختبار مستقل لطبقة الاتصال بقاعدة بيانات Supabase</h1>
+  <p class="info">هذا الملف لا يتصل بأي شيء من الواجهة الأصلية للمتجر — فقط يختبر الاتصال بشكل معزول. لا توجد بيانات اتصال محفوظة داخل هذا الملف؛ أدخلها في كل مرة أدناه (لن تُحفظ أو تُرسل لأي مكان غير Supabase مباشرة من متصفحك).</p>
+
+  <div id="setup">
+    <label for="url-input">Project URL</label>
+    <input id="url-input" type="text" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" />
+    <label for="key-input">anon / publishable key</label>
+    <input id="key-input" type="text" placeholder="sb_publishable_... أو eyJ..." autocomplete="off" />
+    <button id="run-btn">تشغيل الاختبار</button>
+  </div>
+
+  <div id="results" hidden></div>
+  <div id="summary"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const resultsEl = document.getElementById("results");
+    const summaryEl = document.getElementById("summary");
+    const urlInput = document.getElementById("url-input");
+    const keyInput = document.getElementById("key-input");
+    const runBtn = document.getElementById("run-btn");
+
+    let pass = 0;
+    let fail = 0;
+
+    function log(label, ok, detail) {
+      const div = document.createElement("div");
+      div.className = "line " + (ok ? "pass" : "fail");
+      div.textContent = (ok ? "✔ نجح: " : "✘ فشل: ") + label + (detail ? " — " + detail : "");
+      resultsEl.appendChild(div);
+      console.log((ok ? "PASS" : "FAIL") + ": " + label, detail || "");
+      if (ok) pass++; else fail++;
+    }
+
+    async function run() {
+      const url = urlInput.value.trim();
+      const key = keyInput.value.trim();
+      if (!url || !key) {
+        alert("الرجاء إدخال Project URL و anon key أولاً");
+        return;
+      }
+
+      pass = 0;
+      fail = 0;
+      resultsEl.hidden = false;
+      resultsEl.innerHTML = "";
+      summaryEl.textContent = "";
+      runBtn.disabled = true;
+
+      const supabaseClient = window.supabase.createClient(url, key);
+
+      // ============================================================
+      // القسم أ: القراءة العامة يجب أن تعمل (منتجات ظاهرة فقط)
+      // ============================================================
+      try {
+        const { data, error } = await supabaseClient.from("products").select("*");
+        if (error) throw error;
+        log("قراءة عامة لجدول products (يجب أن تنجح)", true, `عدد الصفوف: ${data.length}`);
+        const hiddenLeaked = data.some((p) => p.visible === false);
+        log("لا تظهر أي منتجات مخفية (visible=false) في القراءة العامة", !hiddenLeaked);
+      } catch (e) {
+        log("قراءة عامة لجدول products (يجب أن تنجح)", false, e.message);
+      }
+
+      // ============================================================
+      // القسم ب: كل عمليات الكتابة يجب أن تُرفض (لا توجد مصادقة بعد)
+      // ============================================================
+      try {
+        const { error } = await supabaseClient.from("products").insert({
+          name: "محاولة اختراق RLS",
+          price: 1,
+          category: "test",
+          stock: 1,
+        });
+        log("رفض إضافة منتج بمفتاح anon (يجب أن يُرفض)", !!error, error ? error.message : "تم القبول خطأً!");
+      } catch (e) {
+        log("رفض إضافة منتج بمفتاح anon (يجب أن يُرفض)", true, e.message);
+      }
+
+      try {
+        const { error } = await supabaseClient.from("products").update({ stock: 999 }).eq("id", 1);
+        log("رفض تحديث منتج بمفتاح anon (يجب أن يُرفض)", !!error, error ? error.message : "تم القبول خطأً!");
+      } catch (e) {
+        log("رفض تحديث منتج بمفتاح anon (يجب أن يُرفض)", true, e.message);
+      }
+
+      try {
+        const { error } = await supabaseClient.from("products").delete().eq("id", 1);
+        log("رفض حذف منتج بمفتاح anon (يجب أن يُرفض)", !!error, error ? error.message : "تم القبول خطأً!");
+      } catch (e) {
+        log("رفض حذف منتج بمفتاح anon (يجب أن يُرفض)", true, e.message);
+      }
+
+      try {
+        const { data, error } = await supabaseClient.from("orders").select("*");
+        // بدون أي policy على orders لمفتاح anon: يُتوقع رفض القراءة (صفوف فارغة أو خطأ)
+        const blocked = !!error || (Array.isArray(data) && data.length === 0);
+        log("رفض قراءة جدول orders بمفتاح anon (يجب أن يُرفض/يُعاد فارغاً)", blocked, error ? error.message : `rows=${data ? data.length : "?"}`);
+      } catch (e) {
+        log("رفض قراءة جدول orders بمفتاح anon (يجب أن يُرفض/يُعاد فارغاً)", true, e.message);
+      }
+
+      try {
+        const { error } = await supabaseClient.from("orders").insert({
+          order_code: "HACK-" + Date.now(),
+          customer_name: "x",
+          customer_phone: "x",
+          customer_address: "x",
+          item_count: 1,
+          total: 1,
+        });
+        log("رفض إنشاء طلب بمفتاح anon (يجب أن يُرفض)", !!error, error ? error.message : "تم القبول خطأً!");
+      } catch (e) {
+        log("رفض إنشاء طلب بمفتاح anon (يجب أن يُرفض)", true, e.message);
+      }
+
+      summaryEl.textContent = `النتيجة: ${pass} نجح، ${fail} فشل`;
+      summaryEl.className = fail > 0 ? "fail" : "pass";
+      runBtn.disabled = false;
+    }
+
+    runBtn.addEventListener("click", run);
+  </script>
+</body>
+</html>
