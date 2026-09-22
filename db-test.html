@@ -73,18 +73,23 @@
       // ============================================================
       // القسم أ: القراءة العامة يجب أن تعمل (منتجات ظاهرة فقط)
       // ============================================================
+      let targetProduct = null;
       try {
         const { data, error } = await supabaseClient.from("products").select("*");
         if (error) throw error;
         log("قراءة عامة لجدول products (يجب أن تنجح)", true, `عدد الصفوف: ${data.length}`);
         const hiddenLeaked = data.some((p) => p.visible === false);
         log("لا تظهر أي منتجات مخفية (visible=false) في القراءة العامة", !hiddenLeaked);
+        targetProduct = data[0] || null;
       } catch (e) {
         log("قراءة عامة لجدول products (يجب أن تنجح)", false, e.message);
       }
 
       // ============================================================
       // القسم ب: كل عمليات الكتابة يجب أن تُرفض (لا توجد مصادقة بعد)
+      // ملاحظة: في Postgres، UPDATE/DELETE بدون policy لا تُرجع خطأً بل
+      // تؤثر على 0 صف فقط — لذا نتحقق من عدد الصفوف المتأثرة فعلياً
+      // عبر .select()، ثم نعيد القراءة للتأكد أن البيانات لم تتغير حقاً.
       // ============================================================
       try {
         const { error } = await supabaseClient.from("products").insert({
@@ -98,18 +103,53 @@
         log("رفض إضافة منتج بمفتاح anon (يجب أن يُرفض)", true, e.message);
       }
 
-      try {
-        const { error } = await supabaseClient.from("products").update({ stock: 999 }).eq("id", 1);
-        log("رفض تحديث منتج بمفتاح anon (يجب أن يُرفض)", !!error, error ? error.message : "تم القبول خطأً!");
-      } catch (e) {
-        log("رفض تحديث منتج بمفتاح anon (يجب أن يُرفض)", true, e.message);
-      }
+      if (targetProduct) {
+        try {
+          const { data, error } = await supabaseClient
+            .from("products")
+            .update({ stock: 999999 })
+            .eq("id", targetProduct.id)
+            .select();
+          const zeroRowsAffected = !error && Array.isArray(data) && data.length === 0;
+          let blocked = !!error || zeroRowsAffected;
+          // تحقق إضافي: أعد قراءة المنتج وتأكد أن قيمته الفعلية لم تتغير
+          if (blocked) {
+            const { data: recheck } = await supabaseClient.from("products").select("*").eq("id", targetProduct.id);
+            const stillUnchanged = !recheck || !recheck[0] || recheck[0].stock !== 999999;
+            blocked = blocked && stillUnchanged;
+          }
+          log(
+            "رفض تحديث منتج بمفتاح anon (يجب أن يُرفض فعلياً، لا فقط بلا خطأ)",
+            blocked,
+            error ? error.message : `rows returned=${data ? data.length : "?"}`
+          );
+        } catch (e) {
+          log("رفض تحديث منتج بمفتاح anon (يجب أن يُرفض فعلياً، لا فقط بلا خطأ)", true, e.message);
+        }
 
-      try {
-        const { error } = await supabaseClient.from("products").delete().eq("id", 1);
-        log("رفض حذف منتج بمفتاح anon (يجب أن يُرفض)", !!error, error ? error.message : "تم القبول خطأً!");
-      } catch (e) {
-        log("رفض حذف منتج بمفتاح anon (يجب أن يُرفض)", true, e.message);
+        try {
+          const { data, error } = await supabaseClient.from("products").delete().eq("id", targetProduct.id).select();
+          const zeroRowsAffected = !error && Array.isArray(data) && data.length === 0;
+          let blocked = !!error || zeroRowsAffected;
+          if (blocked) {
+            const { data: recheck } = await supabaseClient.from("products").select("*").eq("id", targetProduct.id);
+            const stillExists = recheck && recheck.length > 0;
+            blocked = blocked && stillExists;
+          }
+          log(
+            "رفض حذف منتج بمفتاح anon (يجب أن يُرفض فعلياً، لا فقط بلا خطأ)",
+            blocked,
+            error ? error.message : `rows returned=${data ? data.length : "?"}`
+          );
+        } catch (e) {
+          log("رفض حذف منتج بمفتاح anon (يجب أن يُرفض فعلياً، لا فقط بلا خطأ)", true, e.message);
+        }
+      } else {
+        log(
+          "رفض تحديث/حذف منتج بمفتاح anon",
+          false,
+          "تخطّي: لا يوجد أي منتج ظاهر حالياً لاختبار التحديث/الحذف عليه — أضف منتجاً واحداً (visible=true) من SQL Editor أو Table Editor يدوياً ثم أعد المحاولة"
+        );
       }
 
       try {
