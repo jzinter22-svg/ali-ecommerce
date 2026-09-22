@@ -1,13 +1,3 @@
-// بيانات المنتجات (مصدر بيانات وهمي في الذاكرة، لا يوجد اتصال بخادم أو قاعدة بيانات)
-const products = [
-  { id: 1, name: "سماعات لاسلكية", price: 55000, category: "إلكترونيات", image: "🎧" },
-  { id: 2, name: "ساعة ذكية", price: 120000, category: "إلكترونيات", image: "⌚" },
-  { id: 3, name: "حقيبة ظهر", price: 35000, category: "حقائب", image: "🎒" },
-  { id: 4, name: "كاميرا رقمية", price: 200000, category: "إلكترونيات", image: "📷" },
-  { id: 5, name: "لوحة مفاتيح ميكانيكية", price: 75000, category: "إلكترونيات", image: "⌨️" },
-  { id: 6, name: "نظارة شمسية", price: 25000, category: "إكسسوارات", image: "🕶️" }
-];
-
 // تنسيق السعر بالدينار العراقي مع فواصل الآلاف
 function formatPrice(amount) {
   return `${amount.toLocaleString("en-US")} د.ع`;
@@ -341,6 +331,7 @@ function applyProductFilters() {
 }
 
 // سلة التسوق (تبدأ فارغة في الذاكرة، وتُحمَّل من localStorage عند تشغيل الصفحة)
+// تبقى محلية بالكامل - لا سبب لتخزينها في الخادم لمتجر بلا حسابات زبائن
 let cart = [];
 
 const CART_STORAGE_KEY = "ali-ecommerce-cart";
@@ -355,7 +346,7 @@ function saveCartToStorage() {
 }
 
 // استرجاع السلة المحفوظة من localStorage وإعادة بنائها من مصدر الحقيقة الوحيد: مصفوفة adminProducts الحيّة
-// لا يُعتمد على الاسم/السعر/الفئة/الصورة المخزّنة سابقًا، فقط على معرّف المنتج والكمية
+// (المُحمَّلة من Supabase) - لا يُعتمد على الاسم/السعر/الفئة/الصورة المخزّنة سابقًا، فقط على معرّف المنتج والكمية
 function loadCartFromStorage() {
   try {
     const stored = localStorage.getItem(CART_STORAGE_KEY);
@@ -535,12 +526,240 @@ function refreshCartUI() {
   saveCartToStorage();
 }
 
-// الطلبات (Orders): سجلات دائمة ومستقلة عن السلة، تُنشأ فقط عند تأكيد طلب
-// بخلاف السلة (قابلة للتعديل والإفراغ)، الطلب لقطة ثابتة لا تتغير بعد إنشائها
-// باستثناء حقل الحالة (status) الذي يديره المسؤول لاحقًا دون المساس بأي بيانات أخرى في الطلب
-const ORDERS_STORAGE_KEY = "ali-ecommerce-orders";
+// ==========================================================================
+// الكتالوج (products) — مصدره الآن Supabase حصرًا، عبر db.js
+// adminProducts: نسخة عامة (منتجات ظاهرة فقط، anon) يعتمد عليها المتجر/السلة/المفضلة
+// adminCatalogCache: نسخة كاملة (ظاهرة + مخفية) لا تُحمَّل إلا لجلسة أدمن مصادَق عليها
+// ==========================================================================
 
-// حالات الطلب المسموح بها وتسمياتها بالعربية
+let adminProducts = [];
+let adminCatalogCache = [];
+let editingAdminProductId = null;
+
+// يفرض حدًا أقصى زمنيًا على أي وعد (promise) - مفيد ضد بطء بدء تشغيل Supabase
+// الأول بعد فترة خمول (cold start)، حيث قد تتعلّق طلبات fetch بلا مهلة افتراضية
+function withTimeout(promise, ms, timeoutMessage) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(timeoutMessage)), ms)),
+  ]);
+}
+
+// تنفّذ fn() مع مهلة زمنية لكل محاولة، وإعادة محاولة واحدة بعد تأخير قصير إذا فشلت
+// المحاولة الأولى (غالبًا بسبب cold start على الخطة المجانية لـ Supabase) - تُستخدم
+// في كل نقاط تحميل البيانات الأساسية (كتالوج الزبون، كتالوج الأدمن، الطلبات) لتفادي
+// فشل دائم لمجرد أن أول طلب صادف بدء تشغيل بطيئًا
+async function withRetryOnce(fn, timeoutMessage) {
+  try {
+    return await withTimeout(fn(), 8000, timeoutMessage);
+  } catch (firstError) {
+    console.warn("فشلت المحاولة الأولى، إعادة المحاولة بعد تأخير قصير:", firstError);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return await withTimeout(fn(), 8000, timeoutMessage + " (المحاولة الثانية)");
+  }
+}
+
+// تحميل الكتالوج العام (كما يراه الزبون) من Supabase
+async function reloadStorefrontCatalog() {
+  adminProducts = await withRetryOnce(() => dbGetProducts(), "انتهت مهلة تحميل الكتالوج");
+}
+
+// تحميل الكتالوج الكامل (ظاهر + مخفي) لعرضه في لوحة تحكم الأدمن فقط
+async function reloadAdminCatalog() {
+  adminCatalogCache = await withRetryOnce(() => dbGetAllProductsAdmin(), "انتهت مهلة تحميل كتالوج الأدمن");
+}
+
+// تصنيف حالة المخزون لأغراض العرض فقط (لا يُغيّر القيمة الفعلية)
+function getStockStatus(stock) {
+  if (stock === 0) return { label: "نفد المخزون", className: "out" };
+  if (stock <= 5) return { label: `مخزون منخفض — ${stock}`, className: "low" };
+  return { label: `متوفر — ${stock}`, className: "normal" };
+}
+
+// عرض قائمة منتجات لوحة التحكم مع أزرار تعديل/حذف لكل منتج
+function renderAdminProducts() {
+  const listEl = document.getElementById("admin-products-list");
+  if (!listEl) return;
+
+  listEl.innerHTML = "";
+
+  if (adminCatalogCache.length === 0) {
+    const emptyMessage = document.createElement("p");
+    emptyMessage.className = "cart-empty";
+    emptyMessage.textContent = "لا توجد منتجات بعد";
+    listEl.appendChild(emptyMessage);
+    return;
+  }
+
+  adminCatalogCache.forEach((product) => {
+    const row = document.createElement("div");
+    row.className = "admin-product-row";
+
+    const info = document.createElement("div");
+    info.className = "admin-product-info";
+    info.textContent = `${product.image || ""} ${product.name} — ${product.category} — ${formatPrice(product.price)}`.replace(/^\s+/, "");
+
+    const visibilityBadge = document.createElement("span");
+    visibilityBadge.className = product.visible ? "admin-visibility-badge visible" : "admin-visibility-badge hidden";
+    visibilityBadge.textContent = product.visible ? "ظاهر للعملاء" : "مخفي عن العملاء";
+
+    const stockStatus = getStockStatus(product.stock);
+    const stockBadge = document.createElement("span");
+    stockBadge.className = `admin-stock-badge ${stockStatus.className}`;
+    stockBadge.textContent = stockStatus.label;
+
+    const actions = document.createElement("div");
+    actions.className = "admin-product-actions";
+
+    const visibilityBtn = document.createElement("button");
+    visibilityBtn.type = "button";
+    visibilityBtn.className = "btn-view-product-details";
+    visibilityBtn.textContent = product.visible ? "إخفاء عن المتجر" : "إظهار في المتجر";
+    visibilityBtn.addEventListener("click", () => toggleAdminProductVisibility(product.id));
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "btn-view-product-details";
+    editBtn.textContent = "تعديل";
+    editBtn.addEventListener("click", () => startEditAdminProduct(product.id));
+
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "btn-remove-item";
+    deleteBtn.textContent = "حذف";
+    deleteBtn.addEventListener("click", () => deleteAdminProduct(product.id));
+
+    actions.appendChild(visibilityBtn);
+    actions.appendChild(editBtn);
+    actions.appendChild(deleteBtn);
+
+    row.appendChild(info);
+    row.appendChild(visibilityBadge);
+    row.appendChild(stockBadge);
+    row.appendChild(actions);
+    listEl.appendChild(row);
+  });
+}
+
+// تعبئة النموذج ببيانات منتج موجود للتعديل عليه
+function startEditAdminProduct(productId) {
+  const product = adminCatalogCache.find((p) => p.id === productId);
+  if (!product) return;
+
+  editingAdminProductId = productId;
+
+  document.getElementById("admin-product-id").value = product.id;
+  document.getElementById("admin-product-name").value = product.name;
+  document.getElementById("admin-product-price").value = product.price;
+  document.getElementById("admin-product-category").value = product.category;
+  document.getElementById("admin-product-image").value = product.image;
+  document.getElementById("admin-product-stock").value = product.stock;
+
+  const submitBtn = document.getElementById("admin-form-submit");
+  const cancelBtn = document.getElementById("admin-form-cancel");
+  if (submitBtn) submitBtn.textContent = "تحديث المنتج";
+  if (cancelBtn) cancelBtn.hidden = false;
+}
+
+// إلغاء وضع التعديل وإعادة النموذج إلى حالة الإضافة الافتراضية
+function cancelAdminEdit() {
+  editingAdminProductId = null;
+
+  const form = document.getElementById("admin-product-form");
+  if (form) form.reset();
+  document.getElementById("admin-product-id").value = "";
+
+  const submitBtn = document.getElementById("admin-form-submit");
+  const cancelBtn = document.getElementById("admin-form-cancel");
+  if (submitBtn) submitBtn.textContent = "إضافة المنتج";
+  if (cancelBtn) cancelBtn.hidden = true;
+}
+
+// تبديل ظهور منتج للعملاء دون حذفه من الكتالوج الإداري
+async function toggleAdminProductVisibility(productId) {
+  const product = adminCatalogCache.find((p) => p.id === productId);
+  if (!product) return;
+
+  try {
+    await dbUpdateProduct(productId, { visible: !product.visible });
+    await reloadAdminCatalog();
+    renderAdminProducts();
+    await refreshStorefrontAfterAdminChange();
+  } catch (error) {
+    alert("تعذّر تغيير حالة الظهور: " + error.message);
+  }
+}
+
+// حذف منتج من لوحة التحكم عبر معرّفه
+async function deleteAdminProduct(productId) {
+  try {
+    await dbDeleteProduct(productId);
+
+    if (editingAdminProductId === productId) {
+      cancelAdminEdit();
+    }
+
+    await reloadAdminCatalog();
+    renderAdminProducts();
+    await refreshStorefrontAfterAdminChange();
+  } catch (error) {
+    alert("تعذّر حذف المنتج: " + error.message);
+  }
+}
+
+// إضافة منتج جديد أو تحديث منتج موجود بناءً على بيانات النموذج
+async function saveAdminProductForm(name, price, category, image, stock) {
+  try {
+    if (editingAdminProductId !== null) {
+      await dbUpdateProduct(editingAdminProductId, { name, price, category, image, stock });
+    } else {
+      await dbAddProduct({ name, price, category, image, stock, visible: true });
+    }
+
+    await reloadAdminCatalog();
+    renderAdminProducts();
+    cancelAdminEdit();
+    await refreshStorefrontAfterAdminChange();
+  } catch (error) {
+    alert("تعذّر حفظ المنتج: " + error.message);
+  }
+}
+
+// إزالة أي عنصر سلة يشير إلى منتج لم يعد موجودًا في adminProducts، وتحديث بيانات العناصر المتبقية
+// (كالسعر) لتطابق الكتالوج الحالي، مع تقييد الكمية بالمخزون المتاح فعليًا (وإزالة العنصر كليًا إذا نفد المخزون)
+function resyncCartWithCatalog() {
+  cart = cart
+    .filter((item) => adminProducts.some((product) => product.id === item.id))
+    .map((item) => {
+      const product = adminProducts.find((product) => product.id === item.id);
+      return { ...product, quantity: Math.min(item.quantity, product.stock) };
+    })
+    .filter((item) => item.quantity > 0);
+  refreshCartUI();
+}
+
+// إزالة أي معرّف مفضلة لم يعد يشير إلى منتج موجود في adminProducts
+function resyncFavoritesWithCatalog() {
+  favorites = favorites.filter((id) => adminProducts.some((product) => product.id === id));
+  saveFavoritesToStorage();
+  refreshFavoritesUI();
+}
+
+// إعادة مزامنة كل واجهات المتجر (الفئات، الشبكة، السلة، المفضلة) بعد أي تغيير من لوحة التحكم
+async function refreshStorefrontAfterAdminChange() {
+  await reloadStorefrontCatalog();
+  populateCategoryFilter();
+  applyProductFilters();
+  resyncCartWithCatalog();
+  resyncFavoritesWithCatalog();
+}
+
+// ==========================================================================
+// الطلبات (Orders) — عبر RPC فقط (create_order_rpc / update_order_status_rpc /
+// lookup_order_rpc / list_orders_rpc)، لا وصول مباشر لجداول orders/order_items
+// ==========================================================================
+
+// حالات الطلب المسموح بها وتسمياتها بالعربية (تطابق قيد check في قاعدة البيانات)
 const ORDER_STATUS_LABELS = {
   new: "جديد",
   processing: "قيد المعالجة",
@@ -552,260 +771,178 @@ const ORDER_STATUS_LABELS = {
 const ORDER_STATUSES = Object.keys(ORDER_STATUS_LABELS);
 const DEFAULT_ORDER_STATUS = "new";
 
-// استرجاع كل الطلبات المحفوظة سابقًا من localStorage، مع تطبيع حقل الحالة فقط
-// (أي طلب بدون حالة صالحة يحصل على "جديد" افتراضيًا) دون أي تغيير على بقية بيانات الطلب
-function loadOrdersFromStorage() {
-  try {
-    const stored = localStorage.getItem(ORDERS_STORAGE_KEY);
-    const parsed = stored ? JSON.parse(stored) : [];
-    if (!Array.isArray(parsed)) {
-      ensureOrderIdCounter([]);
-      return [];
-    }
-
-    let didMigrate = false;
-    const normalized = parsed.map((order) => {
-      if (!order || typeof order !== "object") return order;
-      if (ORDER_STATUSES.includes(order.status)) return order;
-
-      didMigrate = true;
-      return { ...order, status: DEFAULT_ORDER_STATUS };
-    });
-
-    if (didMigrate) {
-      saveOrdersToStorage(normalized);
-    }
-
-    ensureOrderIdCounter(normalized);
-    return normalized;
-  } catch (error) {
-    ensureOrderIdCounter([]);
-    return [];
-  }
-}
-
-// حفظ قائمة الطلبات كاملة في localStorage
-function saveOrdersToStorage(orders) {
-  try {
-    localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
-  } catch (error) {
-    // localStorage غير متاح - يستمر التطبيق بدون حفظ الطلب
-  }
-}
-
-// عداد تصاعدي مستقل لمعرّفات الطلبات، بنفس أسلوب عداد معرّفات المنتجات الإدارية
-const ORDERS_NEXT_ID_KEY = "ali-ecommerce-orders-next-id";
-
-// استخراج الجزء الرقمي من نهاية معرّف طلب (مثل الطابع الزمني في المعرّفات القديمة)، أو صفر إذا تعذّر ذلك
-function extractNumericOrderSuffix(orderId) {
-  if (typeof orderId !== "string") return 0;
-  const match = orderId.match(/(\d+)$/);
-  return match ? Number(match[1]) : 0;
-}
-
-// التأكد من أن عداد معرّفات الطلبات التالي لا يقل أبدًا عن أعلى معرّف رقمي موجود في القائمة المُحمَّلة حاليًا
-// يُستدعى عند كل تحميل للطلبات، فلا يُشتق العداد لاحقًا من قائمة قد لا تعكس كل المعرّفات المستخدمة سابقًا
-function ensureOrderIdCounter(list) {
-  try {
-    const stored = localStorage.getItem(ORDERS_NEXT_ID_KEY);
-    const storedNext = Number(stored);
-    const currentNext = Number.isInteger(storedNext) && storedNext >= 1 ? storedNext : 1;
-
-    const maxSuffix = list.reduce(
-      (max, order) => Math.max(max, extractNumericOrderSuffix(order && order.orderId)),
-      0
-    );
-    const requiredNext = Math.max(currentNext, maxSuffix + 1);
-
-    if (stored === null || requiredNext !== currentNext) {
-      localStorage.setItem(ORDERS_NEXT_ID_KEY, String(requiredNext));
-    }
-  } catch (error) {
-    // localStorage غير متاح - يستمر التطبيق بدون ضبط العداد
-  }
-}
-
-// توليد معرّف فريد لكل طلب: عداد دائم لا يعتمد على التوقيت، فلا يتكرر أبدًا حتى عند إنشاء طلبين
-// في نفس اللحظة تمامًا (وهي الثغرة التي كانت موجودة في التوليد المعتمد على Date.now() فقط)
-function generateOrderId() {
-  let nextId = 1;
-
-  try {
-    const stored = localStorage.getItem(ORDERS_NEXT_ID_KEY);
-    const parsed = Number(stored);
-    if (Number.isInteger(parsed) && parsed >= 1) {
-      nextId = parsed;
-    }
-  } catch (error) {
-    // localStorage غير متاح - يُستخدم أول معرّف افتراضي
-  }
-
-  try {
-    localStorage.setItem(ORDERS_NEXT_ID_KEY, String(nextId + 1));
-  } catch (error) {
-    // localStorage غير متاح - يستمر التطبيق بدون حفظ العداد
-  }
-
-  return `ORD-${nextId}`;
-}
-
-// بناء سجل طلب مستقل (لقطة) من حالة السلة الحالية وبيانات العميل، ثم إضافته إلى سجل الطلبات الدائم
-function createOrderFromCart(customerName, customerPhone, customerAddress) {
-  const items = cart.map((item) => ({
-    id: item.id,
-    name: item.name,
-    price: item.price,
-    quantity: item.quantity,
-    subtotal: item.price * item.quantity,
-  }));
-
-  const order = {
-    orderId: generateOrderId(),
-    createdAt: new Date().toISOString(),
-    customer: {
-      name: customerName,
-      phone: customerPhone,
-      address: customerAddress,
-    },
-    items,
-    itemCount: items.reduce((sum, item) => sum + item.quantity, 0),
-    total: items.reduce((sum, item) => sum + item.subtotal, 0),
-    status: DEFAULT_ORDER_STATUS,
-  };
-
-  const orders = loadOrdersFromStorage();
-  orders.push(order);
-  saveOrdersToStorage(orders);
-
-  return order;
-}
-
-// حالات الطلب التي يُسمح منها بالإلغاء فقط (new أو processing)
+// حالات الطلب التي يُسمح منها بالإلغاء فقط (new أو processing) - للعرض فقط
+// (الإنفاذ الحقيقي يتم داخل update_order_status_rpc على الخادم)
 const CANCELLABLE_ORDER_STATUSES = ["new", "processing"];
 
-// هل يمكن إلغاء طلب حالته الحالية هي statusValue؟ (لأغراض العرض في لوحة التحكم)
 function isOrderCancellable(statusValue) {
   return CANCELLABLE_ORDER_STATUSES.includes(statusValue);
 }
 
-// تحديث حالة طلب واحد فقط عبر معرّفه، دون المساس بأي حقل آخر (العناصر، العميل، الإجمالي، إلخ)
-// الطلب الملغى نهائي: لا يُسمح بأي انتقال آخر منه. الانتقال إلى "cancelled" مسموح فقط من new/processing،
-// ويُعيد المخزون مرة واحدة بالضبط عند حدوثه فعليًا
-function updateOrderStatus(orderId, newStatus) {
-  if (!ORDER_STATUSES.includes(newStatus)) return;
+// تطويع استجابة RPC (snake_case) إلى نفس الشكل الذي تتوقعه دوال العرض في هذا الملف
+function normalizeRpcOrder(o) {
+  return {
+    orderId: o.order_code,
+    createdAt: o.created_at || new Date().toISOString(),
+    customer: { name: o.customer_name, phone: o.customer_phone, address: o.customer_address },
+    items: (o.items || []).map((item) => ({
+      id: item.product_id,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      subtotal: item.subtotal,
+    })),
+    itemCount: o.item_count,
+    total: o.total,
+    status: o.status,
+  };
+}
 
-  const orders = loadOrdersFromStorage();
-  const order = orders.find((o) => o.orderId === orderId);
-  if (!order) return;
+// بناء طلب من حالة السلة الحالية عبر create_order_rpc (السعر/الاسم يُشتقّان من الخادم حصرًا)
+async function createOrderFromCart(customerName, customerPhone, customerAddress) {
+  const items = cart.map((item) => ({ productId: item.id, quantity: item.quantity }));
+  const raw = await dbCreateOrderRpc(customerName, customerPhone, customerAddress, items);
+  return normalizeRpcOrder(raw);
+}
 
-  // الطلب الملغى نهائي - لا يُعاد فتحه ولا يُعاد إلغاؤه
-  if (order.status === "cancelled") return;
+// قائمة محلية مختصرة (كود الطلب + الهاتف فقط) لتسهيل إعادة البحث لاحقًا على نفس الجهاز
+// ليست مصدر الحقيقة أبدًا - تُستخدم فقط كاختصار لإعادة الجلب الحي عبر lookup_order_rpc
+const RECENT_ORDERS_KEY = "ali-ecommerce-recent-orders";
+const MAX_RECENT_ORDERS = 10;
 
-  if (newStatus === "cancelled") {
-    if (!isOrderCancellable(order.status)) return; // لا يُسمح بالإلغاء من shipped أو completed
-    restoreStockForCancelledOrder(order);
+function saveRecentOrderShortcut(orderCode, phone) {
+  try {
+    const stored = localStorage.getItem(RECENT_ORDERS_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    const list = Array.isArray(parsed) ? parsed : [];
+    const withoutDuplicate = list.filter((entry) => entry && entry.orderCode !== orderCode);
+    withoutDuplicate.unshift({ orderCode, phone, savedAt: new Date().toISOString() });
+    localStorage.setItem(RECENT_ORDERS_KEY, JSON.stringify(withoutDuplicate.slice(0, MAX_RECENT_ORDERS)));
+  } catch (error) {
+    // localStorage غير متاح - يستمر التطبيق بدون حفظ الاختصار
   }
-
-  order.status = newStatus;
-  saveOrdersToStorage(orders);
 }
 
-// خفض مخزون كل منتج بعد إنشاء الطلب بنجاح، بالكمية المطلوبة فعليًا في ذلك الطلب
-// لا يمس هذا سجل الطلب نفسه (لقطة ثابتة) - يؤثر فقط على الكتالوج الحيّ للمستقبل
-function decreaseStockAfterOrder(order) {
-  order.items.forEach((orderItem) => {
-    const product = adminProducts.find((p) => p.id === orderItem.id);
-    if (product) {
-      product.stock = Math.max(0, product.stock - orderItem.quantity);
-    }
-  });
-
-  saveAdminProductsToStorage(adminProducts);
-  populateCategoryFilter();
-  applyProductFilters();
+function loadRecentOrderShortcuts() {
+  try {
+    const stored = localStorage.getItem(RECENT_ORDERS_KEY);
+    const parsed = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry) => entry && typeof entry.orderCode === "string" && typeof entry.phone === "string");
+  } catch (error) {
+    return [];
+  }
 }
 
-// إعادة الكمية المطلوبة في كل بند من لقطة الطلب إلى مخزون المنتج الحالي المطابق (إن وُجد)
-// يُستدعى حصرًا من updateOrderStatus عند انتقال صالح وفريد إلى "cancelled" - لا يمس لقطة الطلب نفسها
-function restoreStockForCancelledOrder(order) {
-  order.items.forEach((orderItem) => {
-    const product = adminProducts.find((p) => p.id === orderItem.id);
-    if (product) {
-      product.stock = product.stock + orderItem.quantity; // إضافة فقط - لا مجال لقيمة غير صالحة
-    }
-    // إذا حُذف المنتج، يُتجاهل بأمان دون أي تأثير آخر
-  });
-
-  saveAdminProductsToStorage(adminProducts);
-  populateCategoryFilter();
-  applyProductFilters();
-  renderAdminProducts();
-}
-
-// عرض سجل الطلبات السابقة كقائمة مختصرة (قراءة وعرض فقط، بدون أي تعديل على الطلبات)
-function renderOrderHistory() {
+// عرض نموذج البحث عن طلب (بالكود + الهاتف) مع قائمة اختصارات لآخر طلبات هذا الجهاز
+function renderOrderLookup() {
   const ordersBody = document.getElementById("orders-body");
   if (!ordersBody) return;
 
   const panelTitle = document.getElementById("orders-panel-title");
-  if (panelTitle) panelTitle.textContent = "طلباتي السابقة";
+  if (panelTitle) panelTitle.textContent = "طلباتي";
 
   ordersBody.innerHTML = "";
 
-  const orders = loadOrdersFromStorage();
+  const form = document.createElement("form");
+  form.className = "checkout-form order-lookup-form";
 
-  if (orders.length === 0) {
-    const emptyMessage = document.createElement("p");
-    emptyMessage.className = "cart-empty";
-    emptyMessage.textContent = "لا توجد طلبات سابقة";
-    ordersBody.appendChild(emptyMessage);
-    return;
-  }
+  const codeLabel = document.createElement("label");
+  codeLabel.textContent = "رقم الطلب";
+  const codeInput = document.createElement("input");
+  codeInput.type = "text";
+  codeInput.name = "orderCode";
+  codeInput.required = true;
+  codeInput.placeholder = "مثال: ORD-12";
 
-  // الأحدث أولًا
-  orders.slice().reverse().forEach((order) => {
-    const card = document.createElement("div");
-    card.className = "order-card";
+  const phoneLabel = document.createElement("label");
+  phoneLabel.textContent = "رقم الهاتف المستخدَم عند الطلب";
+  const phoneInput = document.createElement("input");
+  phoneInput.type = "tel";
+  phoneInput.name = "phone";
+  phoneInput.required = true;
 
-    const header = document.createElement("div");
-    header.className = "order-card-header";
+  const submitBtn = document.createElement("button");
+  submitBtn.type = "submit";
+  submitBtn.className = "btn-primary";
+  submitBtn.textContent = "بحث عن الطلب";
 
-    const orderIdEl = document.createElement("span");
-    orderIdEl.className = "order-id";
-    orderIdEl.textContent = order.orderId;
+  form.appendChild(codeLabel);
+  form.appendChild(codeInput);
+  form.appendChild(phoneLabel);
+  form.appendChild(phoneInput);
+  form.appendChild(submitBtn);
 
-    const dateEl = document.createElement("span");
-    dateEl.className = "order-date";
-    dateEl.textContent = new Date(order.createdAt).toLocaleString("en-US");
+  const errorLine = document.createElement("p");
+  errorLine.className = "checkout-stock-error";
+  errorLine.hidden = true;
 
-    header.appendChild(orderIdEl);
-    header.appendChild(dateEl);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    errorLine.hidden = true;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "جارٍ البحث...";
 
-    const statusLine = document.createElement("p");
-    statusLine.className = "order-status";
-    statusLine.textContent = `الحالة: ${ORDER_STATUS_LABELS[order.status] || ORDER_STATUS_LABELS[DEFAULT_ORDER_STATUS]}`;
-
-    const totalsLine = document.createElement("p");
-    totalsLine.className = "order-total";
-    totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
-
-    const viewDetailsBtn = document.createElement("button");
-    viewDetailsBtn.type = "button";
-    viewDetailsBtn.className = "btn-view-order-details";
-    viewDetailsBtn.textContent = "عرض التفاصيل";
-    viewDetailsBtn.addEventListener("click", () => renderOrderDetails(order.orderId));
-
-    card.appendChild(header);
-    card.appendChild(statusLine);
-    card.appendChild(totalsLine);
-    card.appendChild(viewDetailsBtn);
-
-    ordersBody.appendChild(card);
+    try {
+      const raw = await dbLookupOrderRpc(codeInput.value.trim(), phoneInput.value.trim());
+      if (!raw) {
+        errorLine.textContent = "تعذّر العثور على طلب بهذا الرقم وهذا الهاتف معًا";
+        errorLine.hidden = false;
+      } else {
+        saveRecentOrderShortcut(raw.order_code, phoneInput.value.trim());
+        renderOrderDetails(normalizeRpcOrder(raw));
+        return;
+      }
+    } catch (error) {
+      errorLine.textContent = "حدث خطأ أثناء البحث: " + error.message;
+      errorLine.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "بحث عن الطلب";
+    }
   });
+
+  ordersBody.appendChild(form);
+  ordersBody.appendChild(errorLine);
+
+  const recent = loadRecentOrderShortcuts();
+  if (recent.length > 0) {
+    const recentTitle = document.createElement("h3");
+    recentTitle.textContent = "طلبات حديثة على هذا الجهاز";
+    ordersBody.appendChild(recentTitle);
+
+    recent.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "order-card";
+
+      const codeEl = document.createElement("span");
+      codeEl.className = "order-id";
+      codeEl.textContent = entry.orderCode;
+
+      const viewBtn = document.createElement("button");
+      viewBtn.type = "button";
+      viewBtn.className = "btn-view-order-details";
+      viewBtn.textContent = "عرض";
+      viewBtn.addEventListener("click", async () => {
+        try {
+          const raw = await dbLookupOrderRpc(entry.orderCode, entry.phone);
+          if (raw) {
+            renderOrderDetails(normalizeRpcOrder(raw));
+          }
+        } catch (error) {
+          alert("تعذّر جلب الطلب: " + error.message);
+        }
+      });
+
+      row.appendChild(codeEl);
+      row.appendChild(viewBtn);
+      ordersBody.appendChild(row);
+    });
+  }
 }
 
-// عرض تفاصيل طلب واحد بالكامل عبر معرّفه (orderId)، مع العودة إلى قائمة الطلبات
-function renderOrderDetails(orderId) {
+// عرض تفاصيل طلب واحد (كائن مُطوَّع بالفعل من normalizeRpcOrder) للزبون
+function renderOrderDetails(order) {
   const ordersBody = document.getElementById("orders-body");
   if (!ordersBody) return;
 
@@ -814,69 +951,66 @@ function renderOrderDetails(orderId) {
 
   ordersBody.innerHTML = "";
 
-  const order = loadOrdersFromStorage().find((o) => o.orderId === orderId);
+  const details = document.createElement("div");
+  details.className = "order-details";
 
-  if (!order) {
-    const notFoundMessage = document.createElement("p");
-    notFoundMessage.className = "cart-empty";
-    notFoundMessage.textContent = "تعذّر العثور على هذا الطلب";
-    ordersBody.appendChild(notFoundMessage);
-  } else {
-    const details = document.createElement("div");
-    details.className = "order-details";
+  const header = document.createElement("div");
+  header.className = "order-card-header";
 
-    const header = document.createElement("div");
-    header.className = "order-card-header";
+  const orderIdEl = document.createElement("span");
+  orderIdEl.className = "order-id";
+  orderIdEl.textContent = order.orderId;
 
-    const orderIdEl = document.createElement("span");
-    orderIdEl.className = "order-id";
-    orderIdEl.textContent = order.orderId;
+  const dateEl = document.createElement("span");
+  dateEl.className = "order-date";
+  dateEl.textContent = new Date(order.createdAt).toLocaleString("en-US");
 
-    const dateEl = document.createElement("span");
-    dateEl.className = "order-date";
-    dateEl.textContent = new Date(order.createdAt).toLocaleString("en-US");
+  header.appendChild(orderIdEl);
+  header.appendChild(dateEl);
 
-    header.appendChild(orderIdEl);
-    header.appendChild(dateEl);
+  const statusLine = document.createElement("p");
+  statusLine.className = "order-status";
+  statusLine.textContent = `الحالة: ${ORDER_STATUS_LABELS[order.status] || ORDER_STATUS_LABELS[DEFAULT_ORDER_STATUS]}`;
 
-    const statusLine = document.createElement("p");
-    statusLine.className = "order-status";
-    statusLine.textContent = `الحالة: ${ORDER_STATUS_LABELS[order.status] || ORDER_STATUS_LABELS[DEFAULT_ORDER_STATUS]}`;
+  const customerLine = document.createElement("p");
+  customerLine.className = "order-customer";
+  customerLine.textContent = `${order.customer.name} — ${order.customer.phone} — ${order.customer.address}`;
 
-    const customerLine = document.createElement("p");
-    customerLine.className = "order-customer";
-    customerLine.textContent = `${order.customer.name} — ${order.customer.phone} — ${order.customer.address}`;
+  const itemsList = document.createElement("div");
+  itemsList.className = "order-items";
+  order.items.forEach((item) => {
+    const itemLine = document.createElement("p");
+    itemLine.className = "order-item-line";
+    itemLine.textContent = `${item.name} × ${item.quantity} = ${formatPrice(item.subtotal)}`;
+    itemsList.appendChild(itemLine);
+  });
 
-    const itemsList = document.createElement("div");
-    itemsList.className = "order-items";
-    order.items.forEach((item) => {
-      const itemLine = document.createElement("p");
-      itemLine.className = "order-item-line";
-      itemLine.textContent = `${item.name} × ${item.quantity} = ${formatPrice(item.subtotal)}`;
-      itemsList.appendChild(itemLine);
-    });
+  const totalsLine = document.createElement("p");
+  totalsLine.className = "order-total";
+  totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
 
-    const totalsLine = document.createElement("p");
-    totalsLine.className = "order-total";
-    totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
+  details.appendChild(header);
+  details.appendChild(statusLine);
+  details.appendChild(customerLine);
+  details.appendChild(itemsList);
+  details.appendChild(totalsLine);
 
-    details.appendChild(header);
-    details.appendChild(statusLine);
-    details.appendChild(customerLine);
-    details.appendChild(itemsList);
-    details.appendChild(totalsLine);
-
-    ordersBody.appendChild(details);
-  }
+  ordersBody.appendChild(details);
 
   const backBtn = document.createElement("button");
   backBtn.type = "button";
   backBtn.className = "btn-back-to-orders";
   backBtn.textContent = "→ العودة إلى طلباتي";
-  backBtn.addEventListener("click", renderOrderHistory);
+  backBtn.addEventListener("click", renderOrderLookup);
 
   ordersBody.appendChild(backBtn);
 }
+
+// ==========================================================================
+// إدارة الطلبات (Admin) — عبر list_orders_rpc / update_order_status_rpc فقط
+// ==========================================================================
+
+let adminOrdersCache = [];
 
 // تحديث عدد الطلبات الظاهر بجانب "إدارة الطلبات" في لوحة التحكم
 function updateAdminOrdersCount(count) {
@@ -884,8 +1018,20 @@ function updateAdminOrdersCount(count) {
   if (countEl) countEl.textContent = count;
 }
 
-// عرض قائمة كل طلبات العملاء لغرض الإدارة (قراءة فقط) - نفس مخزن الطلبات الذي تقرأ منه "طلباتي"
-// الأحدث أولًا، بالاعتماد على createdAt، دون أي تعديل على المصفوفة المخزَّنة نفسها
+// تحميل كل الطلبات من الخادم (إدارة فقط) وتطويعها لنفس الشكل المستخدَم في العرض
+async function reloadAdminOrders() {
+  const raw = await withRetryOnce(() => dbListOrdersRpc(), "انتهت مهلة تحميل الطلبات");
+  adminOrdersCache = raw.map(normalizeRpcOrder);
+  updateAdminOrdersCount(adminOrdersCache.length);
+}
+
+// تغيير حالة طلب عبر RPC (إدارة فقط)، ثم إعادة تحميل القائمة كاملة لضمان اتساقها
+async function changeOrderStatusAdmin(orderCode, newStatus) {
+  await dbUpdateOrderStatusRpc(orderCode, newStatus);
+  await reloadAdminOrders();
+}
+
+// عرض قائمة كل طلبات العملاء لغرض الإدارة (قراءة فقط)
 function renderAdminOrderList() {
   const listEl = document.getElementById("admin-orders-list");
   if (!listEl) return;
@@ -895,13 +1041,9 @@ function renderAdminOrderList() {
 
   listEl.innerHTML = "";
 
-  const orders = [...loadOrdersFromStorage()].sort(
-    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
-  );
+  updateAdminOrdersCount(adminOrdersCache.length);
 
-  updateAdminOrdersCount(orders.length);
-
-  if (orders.length === 0) {
+  if (adminOrdersCache.length === 0) {
     const emptyMessage = document.createElement("p");
     emptyMessage.className = "cart-empty";
     emptyMessage.textContent = "لا توجد طلبات حتى الآن";
@@ -909,7 +1051,7 @@ function renderAdminOrderList() {
     return;
   }
 
-  orders.forEach((order) => {
+  adminOrdersCache.forEach((order) => {
     const card = document.createElement("div");
     card.className = "order-card";
 
@@ -955,8 +1097,7 @@ function renderAdminOrderList() {
   });
 }
 
-// عرض تفاصيل طلب واحد لغرض الإدارة، بالاعتماد حصرًا على لقطة الطلب المخزَّنة (order.items)
-// لا يُستخدم adminProducts هنا إطلاقًا: تغيّر السعر/الاسم/المخزون/الظهور الحالي لا يجب أن يغيّر طلبًا تاريخيًا
+// عرض تفاصيل طلب واحد لغرض الإدارة، بالاعتماد حصرًا على adminOrdersCache (لقطة من الخادم)
 function renderAdminOrderDetails(orderId) {
   const listEl = document.getElementById("admin-orders-list");
   if (!listEl) return;
@@ -966,7 +1107,7 @@ function renderAdminOrderDetails(orderId) {
 
   listEl.innerHTML = "";
 
-  const order = loadOrdersFromStorage().find((o) => o.orderId === orderId);
+  const order = adminOrdersCache.find((o) => o.orderId === orderId);
 
   if (!order) {
     const notFoundMessage = document.createElement("p");
@@ -1010,9 +1151,13 @@ function renderAdminOrderDetails(orderId) {
         if (statusKey === order.status) option.selected = true;
         statusSelect.appendChild(option);
       });
-      statusSelect.addEventListener("change", (event) => {
-        updateOrderStatus(order.orderId, event.target.value);
-        renderAdminOrderDetails(order.orderId);
+      statusSelect.addEventListener("change", async (event) => {
+        try {
+          await changeOrderStatusAdmin(order.orderId, event.target.value);
+          renderAdminOrderDetails(order.orderId);
+        } catch (error) {
+          alert("تعذّر تحديث حالة الطلب: " + error.message);
+        }
       });
       statusRow.appendChild(statusSelect);
 
@@ -1020,9 +1165,13 @@ function renderAdminOrderDetails(orderId) {
         const cancelBtn = document.createElement("button");
         cancelBtn.className = "btn-remove-item";
         cancelBtn.textContent = "إلغاء الطلب";
-        cancelBtn.addEventListener("click", () => {
-          updateOrderStatus(order.orderId, "cancelled");
-          renderAdminOrderDetails(order.orderId);
+        cancelBtn.addEventListener("click", async () => {
+          try {
+            await changeOrderStatusAdmin(order.orderId, "cancelled");
+            renderAdminOrderDetails(order.orderId);
+          } catch (error) {
+            alert("تعذّر إلغاء الطلب: " + error.message);
+          }
         });
         statusRow.appendChild(cancelBtn);
       }
@@ -1142,40 +1291,39 @@ function renderCheckoutForm() {
   form.appendChild(addressInput);
   form.appendChild(submitBtn);
 
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    // إعادة قراءة الكتالوج الحالي من التخزين لضمان التحقق من أحدث مخزون متاح
-    // (مثال: تبويب آخر غيّر المخزون بعد فتح هذه النافذة)
-    adminProducts = loadAdminProductsFromStorage();
+    submitBtn.disabled = true;
+    submitBtn.textContent = "جارٍ إرسال الطلب...";
 
-    const hasStockIssue = cart.some((item) => {
-      const product = adminProducts.find((p) => p.id === item.id);
-      return !product || item.quantity > product.stock;
-    });
-
-    if (hasStockIssue) {
+    try {
+      // create_order_rpc يتحقق من المخزون ويخصمه ذرّيًا على الخادم - لا حاجة لفحص مسبق هنا
+      const order = await createOrderFromCart(nameInput.value, phoneInput.value, addressInput.value);
+      saveRecentOrderShortcut(order.orderId, phoneInput.value.trim());
+      renderCheckoutSuccess(order);
+    } catch (error) {
+      // على الأغلب نفاد مخزون تغيّر بعد فتح النافذة - نحدّث الكتالوج والسلة ونعيد المحاولة
+      await reloadStorefrontCatalog();
+      populateCategoryFilter();
+      applyProductFilters();
       resyncCartWithCatalog();
       renderCheckoutForm();
 
       const errorMessage = document.createElement("p");
       errorMessage.className = "checkout-stock-error";
       errorMessage.textContent =
-        "تغيّرت الكمية المتوفرة لأحد المنتجات في سلتك. تم تحديث السلة تلقائيًا، الرجاء مراجعتها والمحاولة مجددًا.";
+        "تعذّر إتمام الطلب (على الأغلب تغيّرت الكمية المتوفرة). تم تحديث السلة تلقائيًا، الرجاء مراجعتها والمحاولة مجددًا. تفاصيل: " +
+        error.message;
       checkoutBody.insertBefore(errorMessage, checkoutBody.firstChild);
-      return;
     }
-
-    const order = createOrderFromCart(nameInput.value, phoneInput.value, addressInput.value);
-    decreaseStockAfterOrder(order);
-    renderCheckoutSuccess(order);
   });
 
   checkoutBody.appendChild(summary);
   checkoutBody.appendChild(form);
 }
 
-// عرض رسالة نجاح الطلب بعد إرسال النموذج، بالاعتماد على سجل الطلب المحفوظ (وليس السلة)
+// عرض رسالة نجاح الطلب بعد إرسال النموذج، بالاعتماد على سجل الطلب المُعاد من الخادم (وليس السلة)
 function renderCheckoutSuccess(order) {
   const checkoutBody = document.getElementById("checkout-body");
   if (!checkoutBody) return;
@@ -1203,6 +1351,11 @@ function renderCheckoutSuccess(order) {
   recap.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
   successBox.appendChild(recap);
 
+  const keepCodeNote = document.createElement("p");
+  keepCodeNote.className = "checkout-summary-total";
+  keepCodeNote.textContent = "احتفظ برقم الطلب ورقم هاتفك لمتابعة حالته لاحقًا من قائمة \"طلباتي\".";
+  successBox.appendChild(keepCodeNote);
+
   const continueBtn = document.createElement("button");
   continueBtn.type = "button";
   continueBtn.className = "btn-primary";
@@ -1218,327 +1371,40 @@ function renderCheckoutSuccess(order) {
 }
 
 // ==========================================================================
-// لوحة تحكم المتجر (Admin Dashboard) — أساس إدارة المنتجات
-// هذا قسم منفصل تمامًا عن واجهة العميل. مصفوفة products الأصلية تبقى كما هي
-// ولا تتأثر بأي عملية هنا؛ لوحة التحكم تدير نسخة إدارية خاصة بها فقط،
-// كخطوة أساس تمهيدية قبل ربطها فعليًا بواجهة العميل في مرحلة قادمة.
+// مصادقة الأدمن — حساب واحد أو أكثر تُدار يدويًا عبر Supabase Auth، منفصلة تمامًا
+// عن الزبائن (بلا حسابات زبائن إطلاقًا في هذا المتجر)
 // ==========================================================================
 
-const ADMIN_PRODUCTS_STORAGE_KEY = "ali-ecommerce-admin-products";
-
-let adminProducts = [];
-let editingAdminProductId = null;
-
-// التحقق من أن كائن المنتج يطابق البنية المطلوبة بالضبط (5 حقول، أنواع صحيحة)
-function isValidAdminProduct(product) {
-  return (
-    product &&
-    typeof product === "object" &&
-    typeof product.id === "number" &&
-    typeof product.name === "string" &&
-    product.name.trim() !== "" &&
-    typeof product.price === "number" &&
-    product.price > 0 &&
-    typeof product.category === "string" &&
-    product.category.trim() !== "" &&
-    typeof product.image === "string" &&
-    product.image.trim() !== ""
-  );
+async function isAdminLoggedIn() {
+  const session = await dbGetSession();
+  return !!session;
 }
 
-// القيمة الافتراضية للمخزون عند عدم وجود قيمة صالحة
-const DEFAULT_STOCK = 10;
+document.addEventListener("DOMContentLoaded", async () => {
+  const productsContainer = document.getElementById("products-container");
 
-// تطبيع قيمة المخزون: عدد صحيح غير سالب فقط، وإلا تُستبدل بالقيمة الافتراضية
-function normalizeStock(value, fallback = DEFAULT_STOCK) {
-  const num = Number(value);
-  return Number.isInteger(num) && num >= 0 ? num : fallback;
-}
+  if (productsContainer) {
+    productsContainer.innerHTML = "";
+    const loadingMessage = document.createElement("p");
+    loadingMessage.className = "no-results";
+    loadingMessage.textContent = "جارٍ تحميل المنتجات...";
+    productsContainer.appendChild(loadingMessage);
+  }
 
-// تحميل منتجات لوحة التحكم من localStorage، وزرعها تلقائيًا من products الأصلية أول مرة
-// كل منتج يظهر للعملاء افتراضيًا (visible: true) ما لم يُخفِه المسؤول صراحةً
-// وكل منتج يحصل على مخزون رقمي صالح (stock)، مع تطبيع أي قيمة قديمة أو تالفة
-function loadAdminProductsFromStorage() {
   try {
-    const stored = localStorage.getItem(ADMIN_PRODUCTS_STORAGE_KEY);
-
-    if (!stored) {
-      const seeded = products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
-      saveAdminProductsToStorage(seeded);
-      ensureAdminProductIdCounter(seeded);
-      return seeded;
+    await reloadStorefrontCatalog();
+  } catch (error) {
+    if (productsContainer) {
+      productsContainer.innerHTML = "";
+      const errorMessage = document.createElement("p");
+      errorMessage.className = "no-results";
+      errorMessage.textContent = "تعذّر الاتصال بقاعدة البيانات. حاول إعادة تحميل الصفحة لاحقًا.";
+      productsContainer.appendChild(errorMessage);
     }
-
-    const parsed = JSON.parse(stored);
-    if (!Array.isArray(parsed)) {
-      const fallback = products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
-      saveAdminProductsToStorage(fallback);
-      ensureAdminProductIdCounter(fallback);
-      return fallback;
-    }
-
-    const normalized = parsed.filter(isValidAdminProduct).map((product) => ({
-      ...product,
-      visible: typeof product.visible === "boolean" ? product.visible : true,
-      stock: normalizeStock(product.stock),
-    }));
-
-    // حفظ النسخة المطبَّعة فورًا حتى تعكس البيانات المخزَّنة القيم الصحيحة من الآن فصاعدًا
-    saveAdminProductsToStorage(normalized);
-    ensureAdminProductIdCounter(normalized);
-    return normalized;
-  } catch (error) {
-    const fallback = products.map((product) => ({ ...product, visible: true, stock: DEFAULT_STOCK }));
-    ensureAdminProductIdCounter(fallback);
-    return fallback;
-  }
-}
-
-// حفظ منتجات لوحة التحكم في localStorage
-function saveAdminProductsToStorage(list) {
-  try {
-    localStorage.setItem(ADMIN_PRODUCTS_STORAGE_KEY, JSON.stringify(list));
-  } catch (error) {
-    // localStorage غير متاح - يستمر التطبيق بدون حفظ
-  }
-}
-
-// عداد تصاعدي مستقل لمعرّفات المنتجات الإدارية، بحيث لا يُعاد استخدام أي معرّف بعد حذفه
-const ADMIN_NEXT_PRODUCT_ID_KEY = "ali-ecommerce-admin-next-product-id";
-
-// التأكد من أن عداد المعرّفات التالي لا يقل أبدًا عن أعلى معرّف موجود في القائمة المُحمَّلة حاليًا
-// يُستدعى عند كل تحميل للكتالوج (قبل أي إمكانية للحذف خلال الجلسة)، فلا يُشتق العداد لاحقًا من
-// مصفوفة قد تكون تقلّصت بسبب الحذف
-function ensureAdminProductIdCounter(list) {
-  try {
-    const stored = localStorage.getItem(ADMIN_NEXT_PRODUCT_ID_KEY);
-    const storedNext = Number(stored);
-    const currentNext = Number.isInteger(storedNext) && storedNext >= 1 ? storedNext : 1;
-
-    const maxId = list.reduce((max, product) => Math.max(max, product.id), 0);
-    const requiredNext = Math.max(currentNext, maxId + 1);
-
-    if (stored === null || requiredNext !== currentNext) {
-      localStorage.setItem(ADMIN_NEXT_PRODUCT_ID_KEY, String(requiredNext));
-    }
-  } catch (error) {
-    // localStorage غير متاح - يستمر التطبيق بدون ضبط العداد
-  }
-}
-
-// توليد معرّف رقمي جديد لمنتج إداري: عداد دائم مستقل تمامًا عن محتوى القائمة الحالية
-// (لا يُشتق من adminProducts هنا إطلاقًا)، فلا يتكرر معرّف حُذف سابقًا أبدًا
-function generateAdminProductId() {
-  let nextId = 1;
-
-  try {
-    const stored = localStorage.getItem(ADMIN_NEXT_PRODUCT_ID_KEY);
-    const parsed = Number(stored);
-    if (Number.isInteger(parsed) && parsed >= 1) {
-      nextId = parsed;
-    }
-  } catch (error) {
-    // localStorage غير متاح - يُستخدم أول معرّف افتراضي
-  }
-
-  try {
-    localStorage.setItem(ADMIN_NEXT_PRODUCT_ID_KEY, String(nextId + 1));
-  } catch (error) {
-    // localStorage غير متاح - يستمر التطبيق بدون حفظ العداد
-  }
-
-  return nextId;
-}
-
-// تصنيف حالة المخزون لأغراض العرض فقط (لا يُغيّر القيمة الفعلية)
-function getStockStatus(stock) {
-  if (stock === 0) return { label: "نفد المخزون", className: "out" };
-  if (stock <= 5) return { label: `مخزون منخفض — ${stock}`, className: "low" };
-  return { label: `متوفر — ${stock}`, className: "normal" };
-}
-
-// عرض قائمة منتجات لوحة التحكم مع أزرار تعديل/حذف لكل منتج
-function renderAdminProducts() {
-  const listEl = document.getElementById("admin-products-list");
-  if (!listEl) return;
-
-  listEl.innerHTML = "";
-
-  if (adminProducts.length === 0) {
-    const emptyMessage = document.createElement("p");
-    emptyMessage.className = "cart-empty";
-    emptyMessage.textContent = "لا توجد منتجات بعد";
-    listEl.appendChild(emptyMessage);
+    console.error("فشل تحميل الكتالوج من Supabase:", error);
     return;
   }
 
-  adminProducts.forEach((product) => {
-    const row = document.createElement("div");
-    row.className = "admin-product-row";
-
-    const info = document.createElement("div");
-    info.className = "admin-product-info";
-    info.textContent = `${product.image} ${product.name} — ${product.category} — ${formatPrice(product.price)}`;
-
-    const visibilityBadge = document.createElement("span");
-    visibilityBadge.className = product.visible ? "admin-visibility-badge visible" : "admin-visibility-badge hidden";
-    visibilityBadge.textContent = product.visible ? "ظاهر للعملاء" : "مخفي عن العملاء";
-
-    const stockStatus = getStockStatus(product.stock);
-    const stockBadge = document.createElement("span");
-    stockBadge.className = `admin-stock-badge ${stockStatus.className}`;
-    stockBadge.textContent = stockStatus.label;
-
-    const actions = document.createElement("div");
-    actions.className = "admin-product-actions";
-
-    const visibilityBtn = document.createElement("button");
-    visibilityBtn.type = "button";
-    visibilityBtn.className = "btn-view-product-details";
-    visibilityBtn.textContent = product.visible ? "إخفاء عن المتجر" : "إظهار في المتجر";
-    visibilityBtn.addEventListener("click", () => toggleAdminProductVisibility(product.id));
-
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "btn-view-product-details";
-    editBtn.textContent = "تعديل";
-    editBtn.addEventListener("click", () => startEditAdminProduct(product.id));
-
-    const deleteBtn = document.createElement("button");
-    deleteBtn.type = "button";
-    deleteBtn.className = "btn-remove-item";
-    deleteBtn.textContent = "حذف";
-    deleteBtn.addEventListener("click", () => deleteAdminProduct(product.id));
-
-    actions.appendChild(visibilityBtn);
-    actions.appendChild(editBtn);
-    actions.appendChild(deleteBtn);
-
-    row.appendChild(info);
-    row.appendChild(visibilityBadge);
-    row.appendChild(stockBadge);
-    row.appendChild(actions);
-    listEl.appendChild(row);
-  });
-}
-
-// تعبئة النموذج ببيانات منتج موجود للتعديل عليه
-function startEditAdminProduct(productId) {
-  const product = adminProducts.find((p) => p.id === productId);
-  if (!product) return;
-
-  editingAdminProductId = productId;
-
-  document.getElementById("admin-product-id").value = product.id;
-  document.getElementById("admin-product-name").value = product.name;
-  document.getElementById("admin-product-price").value = product.price;
-  document.getElementById("admin-product-category").value = product.category;
-  document.getElementById("admin-product-image").value = product.image;
-  document.getElementById("admin-product-stock").value = product.stock;
-
-  const submitBtn = document.getElementById("admin-form-submit");
-  const cancelBtn = document.getElementById("admin-form-cancel");
-  if (submitBtn) submitBtn.textContent = "تحديث المنتج";
-  if (cancelBtn) cancelBtn.hidden = false;
-}
-
-// إلغاء وضع التعديل وإعادة النموذج إلى حالة الإضافة الافتراضية
-function cancelAdminEdit() {
-  editingAdminProductId = null;
-
-  const form = document.getElementById("admin-product-form");
-  if (form) form.reset();
-  document.getElementById("admin-product-id").value = "";
-
-  const submitBtn = document.getElementById("admin-form-submit");
-  const cancelBtn = document.getElementById("admin-form-cancel");
-  if (submitBtn) submitBtn.textContent = "إضافة المنتج";
-  if (cancelBtn) cancelBtn.hidden = true;
-}
-
-// تبديل ظهور منتج للعملاء دون حذفه من الكتالوج الإداري
-function toggleAdminProductVisibility(productId) {
-  const product = adminProducts.find((p) => p.id === productId);
-  if (!product) return;
-
-  product.visible = !product.visible;
-  saveAdminProductsToStorage(adminProducts);
-  renderAdminProducts();
-  refreshStorefrontAfterAdminChange();
-}
-
-// حذف منتج من لوحة التحكم عبر معرّفه
-function deleteAdminProduct(productId) {
-  adminProducts = adminProducts.filter((p) => p.id !== productId);
-  saveAdminProductsToStorage(adminProducts);
-
-  if (editingAdminProductId === productId) {
-    cancelAdminEdit();
-  }
-
-  renderAdminProducts();
-  refreshStorefrontAfterAdminChange();
-}
-
-// إضافة منتج جديد أو تحديث منتج موجود بناءً على بيانات النموذج
-function saveAdminProductForm(name, price, category, image, stock) {
-  if (editingAdminProductId !== null) {
-    const product = adminProducts.find((p) => p.id === editingAdminProductId);
-    if (product) {
-      product.name = name;
-      product.price = price;
-      product.category = category;
-      product.image = image;
-      product.stock = stock;
-    }
-  } else {
-    adminProducts.push({
-      id: generateAdminProductId(),
-      name,
-      price,
-      category,
-      image,
-      visible: true,
-      stock,
-    });
-  }
-
-  saveAdminProductsToStorage(adminProducts);
-  renderAdminProducts();
-  cancelAdminEdit();
-  refreshStorefrontAfterAdminChange();
-}
-
-// إزالة أي عنصر سلة يشير إلى منتج لم يعد موجودًا في adminProducts، وتحديث بيانات العناصر المتبقية
-// (كالسعر) لتطابق الكتالوج الحالي، مع تقييد الكمية بالمخزون المتاح فعليًا (وإزالة العنصر كليًا إذا نفد المخزون)
-function resyncCartWithCatalog() {
-  cart = cart
-    .filter((item) => adminProducts.some((product) => product.id === item.id))
-    .map((item) => {
-      const product = adminProducts.find((product) => product.id === item.id);
-      return { ...product, quantity: Math.min(item.quantity, product.stock) };
-    })
-    .filter((item) => item.quantity > 0);
-  refreshCartUI();
-}
-
-// إزالة أي معرّف مفضلة لم يعد يشير إلى منتج موجود في adminProducts
-function resyncFavoritesWithCatalog() {
-  favorites = favorites.filter((id) => adminProducts.some((product) => product.id === id));
-  saveFavoritesToStorage();
-  refreshFavoritesUI();
-}
-
-// إعادة مزامنة كل واجهات المتجر (الفئات، الشبكة، السلة، المفضلة) بعد أي تغيير من لوحة التحكم
-function refreshStorefrontAfterAdminChange() {
-  populateCategoryFilter();
-  applyProductFilters();
-  resyncCartWithCatalog();
-  resyncFavoritesWithCatalog();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  adminProducts = loadAdminProductsFromStorage();
   favorites = loadFavoritesFromStorage();
   populateCategoryFilter();
   applyProductFilters();
@@ -1642,7 +1508,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (ordersToggle && ordersOverlay && closeOrdersBtn) {
     ordersToggle.addEventListener("click", (event) => {
       event.preventDefault();
-      renderOrderHistory();
+      renderOrderLookup();
       ordersOverlay.hidden = false;
     });
 
@@ -1687,6 +1553,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  // ========================================================================
+  // لوحة تحكم الأدمن: بوابة تسجيل الدخول + التبويبات + نموذج المنتج
+  // ========================================================================
+
   const adminDashboardLink = document.getElementById("admin-dashboard-link");
   const backToStoreLink = document.getElementById("back-to-store");
   const adminDashboardSection = document.getElementById("admin-dashboard");
@@ -1697,21 +1567,76 @@ document.addEventListener("DOMContentLoaded", () => {
   const adminTabOrders = document.getElementById("admin-tab-orders");
   const adminProductsPanel = document.getElementById("admin-products-panel");
   const adminOrdersPanel = document.getElementById("admin-orders-panel");
+  const adminLoginPanel = document.getElementById("admin-login-panel");
+  const adminLoginForm = document.getElementById("admin-login-form");
+  const adminLoginError = document.getElementById("admin-login-error");
+  const adminAuthenticatedArea = document.getElementById("admin-authenticated-area");
+  const adminLogoutBtn = document.getElementById("admin-logout-btn");
+  const adminLoggedInAs = document.getElementById("admin-logged-in-as");
+
+  async function enterAuthenticatedAdminView(session) {
+    if (adminLoginPanel) adminLoginPanel.hidden = true;
+    if (adminAuthenticatedArea) adminAuthenticatedArea.hidden = false;
+    if (adminLoggedInAs && session && session.user) adminLoggedInAs.textContent = session.user.email;
+
+    await reloadAdminCatalog();
+    renderAdminProducts();
+
+    if (adminTabProducts && adminTabOrders && adminProductsPanel && adminOrdersPanel) {
+      adminTabProducts.classList.add("active");
+      adminTabOrders.classList.remove("active");
+      adminProductsPanel.hidden = false;
+      adminOrdersPanel.hidden = true;
+    }
+  }
+
+  function showAdminLoginView() {
+    if (adminAuthenticatedArea) adminAuthenticatedArea.hidden = true;
+    if (adminLoginPanel) adminLoginPanel.hidden = false;
+  }
 
   if (adminDashboardLink && adminDashboardSection && mainContent) {
-    adminDashboardLink.addEventListener("click", (event) => {
+    adminDashboardLink.addEventListener("click", async (event) => {
       event.preventDefault();
       mainContent.hidden = true;
       adminDashboardSection.hidden = false;
-      renderAdminProducts();
-      updateAdminOrdersCount(loadOrdersFromStorage().length);
 
-      if (adminTabProducts && adminTabOrders && adminProductsPanel && adminOrdersPanel) {
-        adminTabProducts.classList.add("active");
-        adminTabOrders.classList.remove("active");
-        adminProductsPanel.hidden = false;
-        adminOrdersPanel.hidden = true;
+      const session = await dbGetSession();
+      if (session) {
+        await enterAuthenticatedAdminView(session);
+      } else {
+        showAdminLoginView();
       }
+    });
+  }
+
+  if (adminLoginForm && adminLoginError) {
+    adminLoginForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      adminLoginError.hidden = true;
+
+      const email = document.getElementById("admin-login-email").value.trim();
+      const password = document.getElementById("admin-login-password").value;
+
+      try {
+        const session = await dbAdminSignIn(email, password);
+        adminLoginForm.reset();
+        await enterAuthenticatedAdminView(session);
+      } catch (error) {
+        adminLoginError.textContent = "تعذّر تسجيل الدخول: " + error.message;
+        adminLoginError.hidden = false;
+      }
+    });
+  }
+
+  if (adminLogoutBtn) {
+    adminLogoutBtn.addEventListener("click", async () => {
+      try {
+        await dbAdminSignOut();
+      } catch (error) {
+        // نستمر ونعرض شاشة الدخول حتى لو فشل استدعاء signOut نفسه
+      }
+      showAdminLoginView();
     });
   }
 
@@ -1724,13 +1649,22 @@ document.addEventListener("DOMContentLoaded", () => {
       adminOrdersPanel.hidden = true;
     });
 
-    adminTabOrders.addEventListener("click", (event) => {
+    adminTabOrders.addEventListener("click", async (event) => {
       event.preventDefault();
       adminTabOrders.classList.add("active");
       adminTabProducts.classList.remove("active");
       adminProductsPanel.hidden = true;
       adminOrdersPanel.hidden = false;
-      renderAdminOrderList();
+      try {
+        await reloadAdminOrders();
+        renderAdminOrderList();
+      } catch (error) {
+        adminOrdersPanel.innerHTML = "";
+        const errorMessage = document.createElement("p");
+        errorMessage.className = "cart-empty";
+        errorMessage.textContent = "تعذّر تحميل الطلبات: " + error.message;
+        adminOrdersPanel.appendChild(errorMessage);
+      }
     });
   }
 
@@ -1743,7 +1677,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (adminProductForm) {
-    adminProductForm.addEventListener("submit", (event) => {
+    adminProductForm.addEventListener("submit", async (event) => {
       event.preventDefault();
 
       const name = document.getElementById("admin-product-name").value.trim();
@@ -1760,11 +1694,18 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      saveAdminProductForm(name, price, category, image, stock);
+      await saveAdminProductForm(name, price, category, image, stock);
     });
   }
 
   if (adminFormCancelBtn) {
     adminFormCancelBtn.addEventListener("click", cancelAdminEdit);
   }
+
+  // إبقاء واجهة الأدمن متزامنة مع حالة الجلسة الفعلية (مثال: انتهاء صلاحية الجلسة)
+  dbOnAuthStateChange((session) => {
+    if (!session && adminAuthenticatedArea && !adminAuthenticatedArea.hidden) {
+      showAdminLoginView();
+    }
+  });
 });

@@ -71,42 +71,64 @@
         <a href="#" id="back-to-store" class="admin-link">→ العودة إلى المتجر</a>
       </div>
 
-      <div class="admin-tabs">
-        <a href="#" id="admin-tab-products" class="admin-tab-link active">إدارة المنتجات</a>
-        <a href="#" id="admin-tab-orders" class="admin-tab-link">إدارة الطلبات <span id="admin-orders-count" class="cart-count">0</span></a>
-      </div>
+      <div id="admin-login-panel">
+        <form id="admin-login-form" class="checkout-form admin-product-form">
+          <label for="admin-login-email">البريد الإلكتروني</label>
+          <input type="email" id="admin-login-email" required autocomplete="username">
 
-      <div id="admin-products-panel">
-        <form id="admin-product-form" class="checkout-form admin-product-form">
-          <input type="hidden" id="admin-product-id">
-
-          <label for="admin-product-name">اسم المنتج</label>
-          <input type="text" id="admin-product-name" required>
-
-          <label for="admin-product-price">السعر (د.ع)</label>
-          <input type="number" id="admin-product-price" min="1" step="1" required>
-
-          <label for="admin-product-category">الفئة</label>
-          <input type="text" id="admin-product-category" required>
-
-          <label for="admin-product-image">الصورة (رمز تعبيري)</label>
-          <input type="text" id="admin-product-image" required>
-
-          <label for="admin-product-stock">المخزون (عدد القطع)</label>
-          <input type="number" id="admin-product-stock" min="0" step="1" required>
+          <label for="admin-login-password">كلمة المرور</label>
+          <input type="password" id="admin-login-password" required autocomplete="current-password">
 
           <div class="admin-form-actions">
-            <button type="submit" class="btn-primary" id="admin-form-submit">إضافة المنتج</button>
-            <button type="button" class="btn-reset-filters" id="admin-form-cancel" hidden>إلغاء التعديل</button>
+            <button type="submit" class="btn-primary">تسجيل الدخول</button>
           </div>
         </form>
-
-        <div class="admin-products-list" id="admin-products-list"></div>
+        <p id="admin-login-error" class="checkout-stock-error" hidden></p>
       </div>
 
-      <div id="admin-orders-panel" hidden>
-        <h3 id="admin-orders-panel-title" class="section-title">الطلبات</h3>
-        <div id="admin-orders-list"></div>
+      <div id="admin-authenticated-area" hidden>
+        <div class="admin-dashboard-header">
+          <span id="admin-logged-in-as"></span>
+          <button type="button" id="admin-logout-btn" class="btn-reset-filters">تسجيل الخروج</button>
+        </div>
+
+        <div class="admin-tabs">
+          <a href="#" id="admin-tab-products" class="admin-tab-link active">إدارة المنتجات</a>
+          <a href="#" id="admin-tab-orders" class="admin-tab-link">إدارة الطلبات <span id="admin-orders-count" class="cart-count">0</span></a>
+        </div>
+
+        <div id="admin-products-panel">
+          <form id="admin-product-form" class="checkout-form admin-product-form">
+            <input type="hidden" id="admin-product-id">
+
+            <label for="admin-product-name">اسم المنتج</label>
+            <input type="text" id="admin-product-name" required>
+
+            <label for="admin-product-price">السعر (د.ع)</label>
+            <input type="number" id="admin-product-price" min="1" step="1" required>
+
+            <label for="admin-product-category">الفئة</label>
+            <input type="text" id="admin-product-category" required>
+
+            <label for="admin-product-image">الصورة (رمز تعبيري)</label>
+            <input type="text" id="admin-product-image" required>
+
+            <label for="admin-product-stock">المخزون (عدد القطع)</label>
+            <input type="number" id="admin-product-stock" min="0" step="1" required>
+
+            <div class="admin-form-actions">
+              <button type="submit" class="btn-primary" id="admin-form-submit">إضافة المنتج</button>
+              <button type="button" class="btn-reset-filters" id="admin-form-cancel" hidden>إلغاء التعديل</button>
+            </div>
+          </form>
+
+          <div class="admin-products-list" id="admin-products-list"></div>
+        </div>
+
+        <div id="admin-orders-panel" hidden>
+          <h3 id="admin-orders-panel-title" class="section-title">الطلبات</h3>
+          <div id="admin-orders-list"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -166,6 +188,9 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+  <script src="db.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
