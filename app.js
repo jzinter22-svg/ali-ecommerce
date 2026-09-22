@@ -3,6 +3,44 @@ function formatPrice(amount) {
   return `${amount.toLocaleString("en-US")} د.ع`;
 }
 
+// ==========================================================================
+// شاشة البداية (Lottie) — تُعرض في كل تحميل للصفحة لمدة ثابتة بغض النظر عن
+// حالة تحميل البيانات، ثم تختفي تدريجيًا. مستقلة عن DOMContentLoaded الرئيسي
+// حتى لا يتأخر ظهورها/اختفاؤها بانتظار استدعاءات الشبكة
+// ==========================================================================
+(function initSplashScreen() {
+  const splash = document.getElementById("splash-screen");
+  if (!splash) return;
+  const SPLASH_DURATION_MS = 1800;
+  window.setTimeout(() => {
+    splash.classList.add("splash-hidden");
+    splash.addEventListener(
+      "transitionend",
+      () => {
+        splash.hidden = true;
+      },
+      { once: true }
+    );
+  }, SPLASH_DURATION_MS);
+})();
+
+// إنشاء مؤشر تحميل (Lottie، نقاط متقافزة) يحل محل نص "جارٍ التحميل..." النصي
+function createLoadingIndicator() {
+  const wrapper = document.createElement("div");
+  wrapper.className = "loading-indicator";
+  wrapper.setAttribute("role", "status");
+  wrapper.setAttribute("aria-label", "جارٍ التحميل");
+
+  const lottie = document.createElement("dotlottie-wc");
+  lottie.setAttribute("src", "loading.json");
+  lottie.setAttribute("autoplay", "");
+  lottie.setAttribute("loop", "");
+  lottie.className = "loading-indicator-lottie";
+
+  wrapper.appendChild(lottie);
+  return wrapper;
+}
+
 // إنشاء عنصر DOM واحد يمثل بطاقة منتج
 function createProductCard(product) {
   const card = document.createElement("div");
@@ -1434,10 +1472,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   if (productsContainer) {
     productsContainer.innerHTML = "";
-    const loadingMessage = document.createElement("p");
-    loadingMessage.className = "no-results";
-    loadingMessage.textContent = "جارٍ تحميل المنتجات...";
-    productsContainer.appendChild(loadingMessage);
+    productsContainer.appendChild(createLoadingIndicator());
   }
 
   try {
@@ -1628,6 +1663,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (adminAuthenticatedArea) adminAuthenticatedArea.hidden = false;
     if (adminLoggedInAs && session && session.user) adminLoggedInAs.textContent = session.user.email;
 
+    const adminProductsListEl = document.getElementById("admin-products-list");
+    if (adminProductsListEl) {
+      adminProductsListEl.innerHTML = "";
+      adminProductsListEl.appendChild(createLoadingIndicator());
+    }
+
     await reloadAdminCatalog();
     renderAdminProducts();
 
@@ -1704,6 +1745,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       adminTabProducts.classList.remove("active");
       adminProductsPanel.hidden = true;
       adminOrdersPanel.hidden = false;
+      const adminOrdersListEl = document.getElementById("admin-orders-list");
+      if (adminOrdersListEl) {
+        adminOrdersListEl.innerHTML = "";
+        adminOrdersListEl.appendChild(createLoadingIndicator());
+      }
       try {
         await reloadAdminOrders();
         renderAdminOrderList();

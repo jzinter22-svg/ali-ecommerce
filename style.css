@@ -17,6 +17,42 @@ body {
   padding: 0 20px;
 }
 
+/* Splash screen */
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #fff3e9;
+  opacity: 1;
+  transition: opacity 0.4s ease;
+}
+
+.splash-screen.splash-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.splash-lottie {
+  width: 220px;
+  height: 220px;
+}
+
+/* Loading indicator (Lottie) */
+.loading-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 0;
+}
+
+.loading-indicator-lottie {
+  width: 90px;
+  height: 90px;
+}
+
 /* Header */
 .site-header {
   background-color: #ffffff;
