@@ -67,76 +67,84 @@ async function dbDeleteProduct(productId) {
 }
 
 // ============================================================
-// الطلبات (orders + order_items)
+// المصادقة (Admin auth only — لا حسابات للزبائن)
 // ============================================================
 
-async function dbGetOrders() {
-  const { data, error } = await supabaseClient
-    .from("orders")
-    .select("*, order_items(*)")
-    .order("created_at", { ascending: false });
+async function dbAdminSignIn(email, password) {
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) throw error;
-  return data;
+  return data.session;
 }
 
-async function dbGetOrderItems(orderId) {
+async function dbAdminSignOut() {
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) throw error;
+}
+
+async function dbGetSession() {
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) throw error;
+  return data.session;
+}
+
+function dbOnAuthStateChange(callback) {
+  const { data } = supabaseClient.auth.onAuthStateChange((_event, session) => callback(session));
+  return data.subscription;
+}
+
+// ============================================================
+// المنتجات (إدارة كاملة — تتطلب جلسة أدمن مصادَق عليها بفضل RLS)
+// ============================================================
+
+// قراءة كل المنتجات (ظاهرة ومخفية) — تعمل فقط لجلسة أدمن مسجّلة دخولها
+async function dbGetAllProductsAdmin() {
   const { data, error } = await supabaseClient
-    .from("order_items")
+    .from("products")
     .select("*")
-    .eq("order_id", orderId);
+    .order("id", { ascending: true });
   if (error) throw error;
   return data;
 }
 
-// items: [{ productId, name, price, quantity, subtotal }]
-// productId يمكن أن يكون null إن لم يعد المنتج موجوداً في الكتالوج الحي
-async function dbCreateOrder(orderData, items) {
-  const { data: order, error: orderError } = await supabaseClient
-    .from("orders")
-    .insert({
-      order_code: orderData.orderCode,
-      status: orderData.status || "new",
-      customer_name: orderData.customerName,
-      customer_phone: orderData.customerPhone,
-      customer_address: orderData.customerAddress,
-      item_count: orderData.itemCount,
-      total: orderData.total,
-    })
-    .select()
-    .single();
-  if (orderError) throw orderError;
+// ============================================================
+// الطلبات (orders + order_items) — عبر RPC فقط، لا وصول مباشر للجداول
+// ============================================================
 
-  const itemsToInsert = items.map((item) => ({
-    order_id: order.id,
-    product_id: item.productId ?? null,
-    product_name: item.name,
-    price: item.price,
-    quantity: item.quantity,
-    subtotal: item.subtotal,
-  }));
-
-  const { data: insertedItems, error: itemsError } = await supabaseClient
-    .from("order_items")
-    .insert(itemsToInsert)
-    .select();
-  if (itemsError) throw itemsError;
-
-  return { ...order, order_items: insertedItems };
-}
-
-async function dbUpdateOrderStatus(orderId, newStatus) {
-  const { data, error } = await supabaseClient
-    .from("orders")
-    .update({ status: newStatus })
-    .eq("id", orderId)
-    .select()
-    .single();
+// items: [{ productId, quantity }] فقط — السعر والاسم يُشتقّان من الخادم حصراً
+async function dbCreateOrderRpc(customerName, customerPhone, customerAddress, items) {
+  const { data, error } = await supabaseClient.rpc("create_order_rpc", {
+    customer_name: customerName,
+    customer_phone: customerPhone,
+    customer_address: customerAddress,
+    items: items.map((item) => ({ product_id: item.productId, quantity: item.quantity })),
+  });
   if (error) throw error;
   return data;
 }
 
-async function dbDeleteOrder(orderId) {
-  const { error } = await supabaseClient.from("orders").delete().eq("id", orderId);
+// إدارة فقط — يفرض قواعد الإلغاء واستعادة المخزون ذرّيًا داخل قاعدة البيانات
+async function dbUpdateOrderStatusRpc(orderCode, newStatus) {
+  const { data, error } = await supabaseClient.rpc("update_order_status_rpc", {
+    p_order_code: orderCode,
+    p_new_status: newStatus,
+  });
   if (error) throw error;
-  return true;
+  return data;
+}
+
+// بحث الضيف عن طلبه بكود الطلب + رقم الهاتف فقط (بدون حساب)
+async function dbLookupOrderRpc(orderCode, phone) {
+  const { data, error } = await supabaseClient.rpc("lookup_order_rpc", {
+    p_order_code: orderCode,
+    p_phone: phone,
+  });
+  if (error) throw error;
+  return data; // null إذا لم يُعثر على تطابق
+}
+
+// إدارة فقط — كل الطلبات مع عناصرها
+async function dbListOrdersRpc() {
+  const { data, error } = await supabaseClient.rpc("list_orders_rpc");
+  if (error) throw error;
+  return data;
 }

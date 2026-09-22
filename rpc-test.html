@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<title>اختبار RPC والمصادقة — Supabase</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 40px auto; padding: 0 16px; background: #f7f7f7; }
+  h1 { font-size: 20px; }
+  h2 { font-size: 16px; margin-top: 28px; }
+  #setup { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  #setup label { display: block; font-size: 13px; color: #555; margin-top: 10px; }
+  #setup input { width: 100%; box-sizing: border-box; padding: 8px; font-size: 14px; margin-top: 4px; }
+  button { margin-top: 14px; padding: 10px 20px; font-size: 14px; cursor: pointer; }
+  .results { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-top: 10px; }
+  .line { padding: 6px 0; border-bottom: 1px solid #eee; font-size: 14px; }
+  .pass { color: #0a7f3f; }
+  .fail { color: #c0392b; font-weight: bold; }
+  .info { color: #555; }
+  .summary { margin-top: 10px; font-weight: bold; font-size: 15px; }
+  .status-box { background: #eef; border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <h1>اختبار طبقة RPC والمصادقة (Step 1-2)</h1>
+  <p class="info">لا يتصل هذا الملف بأي شيء من الواجهة الأصلية للمتجر. لا توجد بيانات اتصال محفوظة داخله.</p>
+
+  <div id="setup">
+    <label for="url-input">Project URL</label>
+    <input id="url-input" type="text" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" />
+    <label for="key-input">anon / publishable key</label>
+    <input id="key-input" type="text" placeholder="sb_publishable_..." autocomplete="off" />
+    <label for="phone-input">رقم هاتف وهمي لاختبار الطلبات</label>
+    <input id="phone-input" type="text" value="0770000000" autocomplete="off" />
+    <button id="run-anon-btn">1) تشغيل اختبارات الضيف (بدون تسجيل دخول)</button>
+  </div>
+
+  <div id="anon-results" class="results" hidden></div>
+  <div id="anon-summary" class="summary"></div>
+
+  <div id="admin-login" class="results" hidden>
+    <h2>2) تسجيل دخول الأدمن</h2>
+    <label for="admin-email">البريد الإلكتروني للأدمن</label>
+    <input id="admin-email" type="email" autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;" />
+    <label for="admin-password">كلمة المرور</label>
+    <input id="admin-password" type="password" autocomplete="off" style="width:100%;box-sizing:border-box;padding:8px;margin-top:4px;" />
+    <button id="login-btn">تسجيل الدخول</button>
+    <div id="login-status" class="status-box" hidden></div>
+  </div>
+
+  <div id="admin-controls" hidden>
+    <button id="run-admin-btn">3) تشغيل اختبارات الأدمن</button>
+  </div>
+  <div id="admin-results" class="results" hidden></div>
+  <div id="admin-summary" class="summary"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    let supabaseClient = null;
+    let createdOrderCode = null;
+    let createdOrderPhone = null;
+    let secondOrderCode = null;
+    let preOrderStock = null;
+    let targetProductId = null;
+
+    function makeLogger(containerEl, summaryEl) {
+      let pass = 0, fail = 0;
+      containerEl.innerHTML = "";
+      containerEl.hidden = false;
+      return {
+        log(label, ok, detail) {
+          const div = document.createElement("div");
+          div.className = "line " + (ok ? "pass" : "fail");
+          div.textContent = (ok ? "✔ نجح: " : "✘ فشل: ") + label + (detail ? " — " + detail : "");
+          containerEl.appendChild(div);
+          console.log((ok ? "PASS" : "FAIL") + ": " + label, detail || "");
+          if (ok) pass++; else fail++;
+        },
+        finish() {
+          summaryEl.textContent = `النتيجة: ${pass} نجح، ${fail} فشل`;
+          summaryEl.className = "summary " + (fail > 0 ? "fail" : "pass");
+        },
+      };
+    }
+
+    // ============================================================
+    // 1) اختبارات الضيف (anon) — قبل أي تسجيل دخول
+    // ============================================================
+    document.getElementById("run-anon-btn").addEventListener("click", async () => {
+      const url = document.getElementById("url-input").value.trim();
+      const key = document.getElementById("key-input").value.trim();
+      const phone = document.getElementById("phone-input").value.trim();
+      if (!url || !key) { alert("أدخل Project URL و anon key أولاً"); return; }
+
+      supabaseClient = window.supabase.createClient(url, key);
+      const { log, finish } = makeLogger(document.getElementById("anon-results"), document.getElementById("anon-summary"));
+
+      // 0. تشخيص + فرض حالة anon حقيقية: مكتبة supabase-js تحفظ الجلسة تلقائياً في
+      // localStorage للمتصفح وتُعيد استخدامها عبر أي إعادة تحميل — إن كنت مسجّلاً دخولك
+      // كأدمن من تشغيل سابق، فستبقى جلسته فعّالة هنا رغم أن هذا القسم يُفترض أن يكون anon
+      // بحت. نتحقق من ذلك صراحة، ثم نفرض تسجيل خروج لضمان اختبار anon حقيقي 100%
+      try {
+        const { data: preCheck } = await supabaseClient.auth.getSession();
+        const hadStaleSession = !!preCheck.session;
+        if (hadStaleSession) {
+          console.warn("تحذير: كانت هناك جلسة أدمن محفوظة من تشغيل سابق:", preCheck.session.user.email);
+        }
+        await supabaseClient.auth.signOut();
+        const { data: postCheck } = await supabaseClient.auth.getSession();
+        log(
+          "تأكيد أن هذا القسم يعمل بمفتاح anon حقيقي (لا جلسة أدمن محفوظة)",
+          !postCheck.session,
+          hadStaleSession
+            ? `⚠️ كانت هناك جلسة أدمن محفوظة (${preCheck.session.user.email}) وتم تسجيل خروجها الآن قسريًا — إذا فشل هذا السطر سابقاً، فهذا يفسّر أي نتائج anon غير موثوقة`
+            : "لم تكن هناك أي جلسة محفوظة مسبقاً — الاختبار كان anon حقيقياً من البداية"
+        );
+      } catch (e) {
+        log("تأكيد أن هذا القسم يعمل بمفتاح anon حقيقي (لا جلسة أدمن محفوظة)", false, e.message);
+      }
+
+      // 1. قراءة عامة للمنتجات (يجب أن تنجح، ونحتاج منتجاً حقيقياً لبقية الاختبارات)
+      let product = null;
+      try {
+        const { data, error } = await supabaseClient.from("products").select("*").gt("stock", 0);
+        if (error) throw error;
+        product = data[0] || null;
+        log("قراءة عامة للمنتجات (يجب أن تنجح)", true, `عدد الصفوف بمخزون > 0: ${data.length}`);
+      } catch (e) {
+        log("قراءة عامة للمنتجات (يجب أن تنجح)", false, e.message);
+      }
+
+      // 2. regression: anon لا يزال ممنوعاً من الكتابة المباشرة على products
+      try {
+        const { data, error } = await supabaseClient.from("products").insert({ name: "x", price: 1, category: "x", stock: 1 }).select();
+        const blocked = !!error || (Array.isArray(data) && data.length === 0);
+        log("رفض إضافة منتج مباشرة بمفتاح anon (regression)", blocked, error ? error.message : "تم القبول خطأً!");
+      } catch (e) {
+        log("رفض إضافة منتج مباشرة بمفتاح anon (regression)", true, e.message);
+      }
+
+      if (!product) {
+        log("بقية اختبارات الطلبات", false, "تخطّي: لا يوجد منتج بمخزون > 0 لاختباره. أضف منتجاً من Table Editor أولاً");
+        finish();
+        return;
+      }
+      targetProductId = product.id;
+      preOrderStock = product.stock;
+
+      // 3. create_order_rpc: إنشاء طلب حقيقي كضيف
+      try {
+        const order = await supabaseClient.rpc("create_order_rpc", {
+          customer_name: "زبون اختبار",
+          customer_phone: phone,
+          customer_address: "بغداد",
+          items: [{ product_id: product.id, quantity: 1 }],
+        });
+        if (order.error) throw order.error;
+        const o = order.data;
+        createdOrderCode = o.order_code;
+        createdOrderPhone = phone;
+        const priceMatches = Number(o.total) === Number(product.price);
+        log("create_order_rpc ينشئ طلباً بالسعر الحقيقي من الكتالوج", priceMatches, `order_code=${o.order_code}, total=${o.total}, real price=${product.price}`);
+      } catch (e) {
+        log("create_order_rpc ينشئ طلباً بالسعر الحقيقي من الكتالوج", false, e.message);
+      }
+
+      // 4. تحقق أن المخزون خُصم فعلياً
+      try {
+        const { data, error } = await supabaseClient.from("products").select("stock").eq("id", product.id).single();
+        if (error) throw error;
+        log("المخزون خُصم فعلياً بعد create_order_rpc", data.stock === preOrderStock - 1, `قبل=${preOrderStock}, بعد=${data.stock}`);
+      } catch (e) {
+        log("المخزون خُصم فعلياً بعد create_order_rpc", false, e.message);
+      }
+
+      // 5. اختبار التلاعب: محاولة إرسال سعر مزيّف ضمن الحمولة — يجب تجاهله كليًا
+      try {
+        const fakeOrder = await supabaseClient.rpc("create_order_rpc", {
+          customer_name: "محاولة تلاعب",
+          customer_phone: phone,
+          customer_address: "بغداد",
+          items: [{ product_id: product.id, quantity: 1, price: 1, name: "سعر مزيّف" }],
+        });
+        if (fakeOrder.error) throw fakeOrder.error;
+        const realPriceUsed = Number(fakeOrder.data.total) === Number(product.price);
+        log("محاولة تلاعب بالسعر تُرفَض/تُتجاهَل (السعر الحقيقي هو المستخدَم)", realPriceUsed, `total المُرجَع=${fakeOrder.data.total}, السعر الحقيقي=${product.price}`);
+        secondOrderCode = fakeOrder.data.order_code;
+      } catch (e) {
+        // فشل الطلب بالكامل يُعتبر أيضاً نجاحاً في منع التلاعب (رفض تام بدل قبول سعر مزيّف)
+        log("محاولة تلاعب بالسعر تُرفَض/تُتجاهَل (السعر الحقيقي هو المستخدَم)", true, "الطلب رُفض بالكامل: " + e.message);
+      }
+
+      // 6. lookup_order_rpc بالهاتف الصحيح
+      try {
+        const { data, error } = await supabaseClient.rpc("lookup_order_rpc", { p_order_code: createdOrderCode, p_phone: phone });
+        if (error) throw error;
+        log("lookup_order_rpc يعيد الطلب الصحيح بالهاتف الصحيح", !!data && data.order_code === createdOrderCode);
+      } catch (e) {
+        log("lookup_order_rpc يعيد الطلب الصحيح بالهاتف الصحيح", false, e.message);
+      }
+
+      // 7. lookup_order_rpc برقم هاتف خاطئ — يجب ألا يُرجع شيئاً
+      try {
+        const { data, error } = await supabaseClient.rpc("lookup_order_rpc", { p_order_code: createdOrderCode, p_phone: "0000000000" });
+        if (error) throw error;
+        log("lookup_order_rpc يرفض رقم هاتف خاطئ (لا يكشف الطلب)", data === null, `data=${JSON.stringify(data)}`);
+      } catch (e) {
+        log("lookup_order_rpc يرفض رقم هاتف خاطئ (لا يكشف الطلب)", true, e.message);
+      }
+
+      finish();
+      document.getElementById("admin-login").hidden = false;
+    });
+
+    // ============================================================
+    // 2) تسجيل دخول الأدمن
+    // ============================================================
+    document.getElementById("login-btn").addEventListener("click", async () => {
+      const email = document.getElementById("admin-email").value.trim();
+      const password = document.getElementById("admin-password").value;
+      const statusBox = document.getElementById("login-status");
+      statusBox.hidden = false;
+      try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        statusBox.textContent = "✔ تم تسجيل الدخول: " + data.user.email;
+        statusBox.style.color = "#0a7f3f";
+        document.getElementById("admin-controls").hidden = false;
+      } catch (e) {
+        statusBox.textContent = "✘ فشل تسجيل الدخول: " + e.message;
+        statusBox.style.color = "#c0392b";
+      }
+    });
+
+    // ============================================================
+    // 3) اختبارات الأدمن — بعد تسجيل الدخول
+    // ============================================================
+    document.getElementById("run-admin-btn").addEventListener("click", async () => {
+      const { log, finish } = makeLogger(document.getElementById("admin-results"), document.getElementById("admin-summary"));
+
+      // 1. الأدمن يقرأ كل المنتجات (ظاهرة ومخفية)
+      try {
+        const { data, error } = await supabaseClient.from("products").select("*");
+        if (error) throw error;
+        log("الأدمن يقرأ كل المنتجات (ظاهرة+مخفية)", true, `عدد الصفوف: ${data.length}`);
+      } catch (e) {
+        log("الأدمن يقرأ كل المنتجات (ظاهرة+مخفية)", false, e.message);
+      }
+
+      // 2. الأدمن يضيف منتجاً فعلياً (يجب أن ينجح الآن، بخلاف anon)
+      let testProductId = null;
+      try {
+        const { data, error } = await supabaseClient
+          .from("products")
+          .insert({ name: "منتج اختبار أدمن", price: 1000, category: "test", stock: 5, visible: false })
+          .select()
+          .single();
+        if (error) throw error;
+        testProductId = data.id;
+        log("الأدمن يضيف منتجاً (يجب أن ينجح)", true, `id=${data.id}`);
+      } catch (e) {
+        log("الأدمن يضيف منتجاً (يجب أن ينجح)", false, e.message);
+      }
+
+      // 3. الأدمن يحدّث ويحذف نفس المنتج فعلياً (تحقق حقيقي من التأثير، وليس فقط غياب الخطأ)
+      if (testProductId) {
+        try {
+          const { data, error } = await supabaseClient.from("products").update({ stock: 999 }).eq("id", testProductId).select();
+          const actuallyUpdated = !error && Array.isArray(data) && data.length === 1 && data[0].stock === 999;
+          log("الأدمن يحدّث منتجاً فعلياً (يجب أن ينجح)", actuallyUpdated, error ? error.message : `rows=${data ? data.length : "?"}`);
+        } catch (e) {
+          log("الأدمن يحدّث منتجاً فعلياً (يجب أن ينجح)", false, e.message);
+        }
+
+        try {
+          const { data, error } = await supabaseClient.from("products").delete().eq("id", testProductId).select();
+          const actuallyDeleted = !error && Array.isArray(data) && data.length === 1;
+          log("الأدمن يحذف منتجاً فعلياً (يجب أن ينجح، تنظيف)", actuallyDeleted, error ? error.message : `rows=${data ? data.length : "?"}`);
+        } catch (e) {
+          log("الأدمن يحذف منتجاً فعلياً (يجب أن ينجح، تنظيف)", false, e.message);
+        }
+      }
+
+      // 4. list_orders_rpc يعيد الطلب المُنشأ سابقاً كضيف
+      try {
+        const { data, error } = await supabaseClient.rpc("list_orders_rpc");
+        if (error) throw error;
+        const found = createdOrderCode ? data.some((o) => o.order_code === createdOrderCode) : false;
+        log("list_orders_rpc يعيد طلبات الضيوف", found, `عدد الطلبات: ${data.length}`);
+      } catch (e) {
+        log("list_orders_rpc يعيد طلبات الضيوف", false, e.message);
+      }
+
+      if (!createdOrderCode) {
+        log("اختبارات الإلغاء (update_order_status_rpc)", false, "تخطّي: لم يُنشأ طلب في القسم الأول");
+        finish();
+        return;
+      }
+
+      // تنظيف: إن كان اختبار التلاعب بالقسم الأول قد أنشأ طلباً فعلياً ناجحاً (secondOrderCode)،
+      // فهو لا يزال يحجز وحدة مخزون واحدة لم تُعَد بعد — يجب إلغاؤه الآن قبل فحص استعادة
+      // المخزون أدناه، وإلا فسيظهر فرق زائف (مثال: 22 بدل 23) رغم أن update_order_status_rpc
+      // يعمل بشكل صحيح تماماً على الطلب المستهدَف فعلياً بالاختبار
+      if (secondOrderCode) {
+        try {
+          await supabaseClient.rpc("update_order_status_rpc", { p_order_code: secondOrderCode, p_new_status: "cancelled" });
+          log("تنظيف: إلغاء طلب اختبار التلاعب (secondOrderCode) لتحرير مخزونه", true, `order_code=${secondOrderCode}`);
+        } catch (e) {
+          // إن كان بالفعل ملغى أو لم يُنشأ فعلياً، هذا متوقع وغير خطير
+          log("تنظيف: إلغاء طلب اختبار التلاعب (secondOrderCode) لتحرير مخزونه", true, "لا حاجة أو تم مسبقاً: " + e.message);
+        }
+      }
+
+      // 5. new -> cancelled: يستعيد المخزون مرة واحدة بالضبط
+      try {
+        const { error } = await supabaseClient.rpc("update_order_status_rpc", { p_order_code: createdOrderCode, p_new_status: "cancelled" });
+        if (error) throw error;
+        const { data: stockData } = await supabaseClient.from("products").select("stock").eq("id", targetProductId).single();
+        log("new->cancelled يستعيد المخزون", stockData.stock === preOrderStock, `المخزون بعد الإلغاء=${stockData.stock}, الأصلي=${preOrderStock}`);
+      } catch (e) {
+        log("new->cancelled يستعيد المخزون", false, e.message);
+      }
+
+      // 6. cancelled -> cancelled: يُرفض (ولا يعيد المخزون مرة ثانية)
+      try {
+        const { error } = await supabaseClient.rpc("update_order_status_rpc", { p_order_code: createdOrderCode, p_new_status: "cancelled" });
+        log("cancelled->cancelled يُرفض", !!error, error ? error.message : "تم القبول خطأً!");
+      } catch (e) {
+        log("cancelled->cancelled يُرفض", true, e.message);
+      }
+
+      // 7. shipped -> cancelled: يُرفض — طلب مستقل خاص بهذا الاختبار (لا يعتمد على نتيجة اختبار التلاعب)
+      try {
+        // إعادة قراءة مخزون حالي لضمان توفر وحدة واحدة على الأقل، بدل افتراض حالة سابقة
+        const { data: freshProducts, error: readError } = await supabaseClient.from("products").select("*").gt("stock", 0).limit(1);
+        if (readError) throw readError;
+        if (!freshProducts || freshProducts.length === 0) {
+          log("shipped->cancelled يُرفض", false, "تخطّي: لا يوجد أي منتج بمخزون > 0 حالياً لإنشاء طلب مستقل لهذا الاختبار");
+        } else {
+          const freshProduct = freshProducts[0];
+          const shipOrder = await supabaseClient.rpc("create_order_rpc", {
+            customer_name: "اختبار shipped->cancelled",
+            customer_phone: "0771111111",
+            customer_address: "بغداد",
+            items: [{ product_id: freshProduct.id, quantity: 1 }],
+          });
+          if (shipOrder.error) throw shipOrder.error;
+          const shipOrderCode = shipOrder.data.order_code;
+
+          await supabaseClient.rpc("update_order_status_rpc", { p_order_code: shipOrderCode, p_new_status: "processing" });
+          await supabaseClient.rpc("update_order_status_rpc", { p_order_code: shipOrderCode, p_new_status: "shipped" });
+          const { error } = await supabaseClient.rpc("update_order_status_rpc", { p_order_code: shipOrderCode, p_new_status: "cancelled" });
+          log("shipped->cancelled يُرفض", !!error, error ? error.message : "تم القبول خطأً!");
+        }
+      } catch (e) {
+        log("shipped->cancelled يُرفض", false, "خطأ غير متوقع أثناء إعداد الاختبار المستقل: " + e.message);
+      }
+
+      finish();
+    });
+  </script>
+</body>
+</html>
