@@ -681,7 +681,8 @@ async function toggleAdminProductVisibility(productId) {
   if (!product) return;
 
   try {
-    await dbUpdateProduct(productId, { visible: !product.visible });
+    // آمن لإعادة المحاولة: تحديث بقيمة مطلقة (visible = X) - إعادة إرساله لا يضاعف شيئًا
+    await withRetryOnce(() => dbUpdateProduct(productId, { visible: !product.visible }), "انتهت مهلة تغيير حالة الظهور");
     await reloadAdminCatalog();
     renderAdminProducts();
     await refreshStorefrontAfterAdminChange();
@@ -693,7 +694,8 @@ async function toggleAdminProductVisibility(productId) {
 // حذف منتج من لوحة التحكم عبر معرّفه
 async function deleteAdminProduct(productId) {
   try {
-    await dbDeleteProduct(productId);
+    // آمن لإعادة المحاولة: حذف صف بمعرّفه - إعادة الحذف بعد نجاحه فعلاً لا تؤثر على شيء (0 صفوف تُحذف في الثانية)
+    await withRetryOnce(() => dbDeleteProduct(productId), "انتهت مهلة حذف المنتج");
 
     if (editingAdminProductId === productId) {
       cancelAdminEdit();
@@ -709,11 +711,21 @@ async function deleteAdminProduct(productId) {
 
 // إضافة منتج جديد أو تحديث منتج موجود بناءً على بيانات النموذج
 async function saveAdminProductForm(name, price, category, image, stock) {
+  const isUpdate = editingAdminProductId !== null;
   try {
-    if (editingAdminProductId !== null) {
-      await dbUpdateProduct(editingAdminProductId, { name, price, category, image, stock });
+    if (isUpdate) {
+      // آمن لإعادة المحاولة: تحديث بقيم مطلقة (name/price/category/image/stock) - إعادة
+      // إرسال نفس القيم يضبطها لنفس النتيجة النهائية دائمًا، بلا أي خطر مضاعفة
+      await withRetryOnce(
+        () => dbUpdateProduct(editingAdminProductId, { name, price, category, image, stock }),
+        "انتهت مهلة تحديث المنتج"
+      );
     } else {
-      await dbAddProduct({ name, price, category, image, stock, visible: true });
+      // غير آمن لإعادة المحاولة تلقائيًا: الإضافة تُنشئ صفًا جديدًا بمعرّف جديد في كل
+      // مرة - لو نجحت المحاولة الأولى فعليًا على الخادم لكن ضاعت الاستجابة، فإعادة
+      // المحاولة تلقائيًا قد تُنشئ منتجًا مكررًا فعليًا (بخلاف التحديث/الحذف). لذا نطبّق
+      // مهلة زمنية فقط بدون إعادة محاولة صامتة، ونوجّه الأدمن للتحقق يدويًا عند الفشل
+      await withTimeout(dbAddProduct({ name, price, category, image, stock, visible: true }), 8000, "انتهت مهلة إضافة المنتج");
     }
 
     await reloadAdminCatalog();
@@ -721,7 +733,15 @@ async function saveAdminProductForm(name, price, category, image, stock) {
     cancelAdminEdit();
     await refreshStorefrontAfterAdminChange();
   } catch (error) {
-    alert("تعذّر حفظ المنتج: " + error.message);
+    if (isUpdate) {
+      alert("تعذّر حفظ المنتج: " + error.message);
+    } else {
+      alert(
+        "تعذّر تأكيد إضافة المنتج (قد تكون المحاولة نجحت فعلاً ولم يصل التأكيد): " +
+          error.message +
+          "\n\nتحقق من قائمة المنتجات قبل إعادة المحاولة لتفادي إضافته مرتين."
+      );
+    }
   }
 }
 
@@ -771,6 +791,14 @@ const ORDER_STATUS_LABELS = {
 const ORDER_STATUSES = Object.keys(ORDER_STATUS_LABELS);
 const DEFAULT_ORDER_STATUS = "new";
 
+// طريقة الدفع الوحيدة المدعومة حالياً: الدفع عند الاستلام (COD)
+// بنية جاهزة للتوسع لاحقاً عند إضافة بوابات دفع حقيقية (يكفي إضافة مفتاح جديد هنا
+// وفي قيد قاعدة البيانات وRPC، دون إعادة هيكلة جدول orders أو منطق الطلب)
+const PAYMENT_METHOD_LABELS = {
+  cod: "الدفع عند الاستلام",
+};
+const PAYMENT_METHOD = "cod";
+
 // حالات الطلب التي يُسمح منها بالإلغاء فقط (new أو processing) - للعرض فقط
 // (الإنفاذ الحقيقي يتم داخل update_order_status_rpc على الخادم)
 const CANCELLABLE_ORDER_STATUSES = ["new", "processing"];
@@ -795,13 +823,14 @@ function normalizeRpcOrder(o) {
     itemCount: o.item_count,
     total: o.total,
     status: o.status,
+    paymentMethod: o.payment_method,
   };
 }
 
 // بناء طلب من حالة السلة الحالية عبر create_order_rpc (السعر/الاسم يُشتقّان من الخادم حصرًا)
 async function createOrderFromCart(customerName, customerPhone, customerAddress) {
   const items = cart.map((item) => ({ productId: item.id, quantity: item.quantity }));
-  const raw = await dbCreateOrderRpc(customerName, customerPhone, customerAddress, items);
+  const raw = await dbCreateOrderRpc(customerName, customerPhone, customerAddress, items, PAYMENT_METHOD);
   return normalizeRpcOrder(raw);
 }
 
@@ -989,11 +1018,16 @@ function renderOrderDetails(order) {
   totalsLine.className = "order-total";
   totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
 
+  const paymentMethodLine = document.createElement("p");
+  paymentMethodLine.className = "order-customer order-payment-method";
+  paymentMethodLine.textContent = `طريقة الدفع: ${PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}`;
+
   details.appendChild(header);
   details.appendChild(statusLine);
   details.appendChild(customerLine);
   details.appendChild(itemsList);
   details.appendChild(totalsLine);
+  details.appendChild(paymentMethodLine);
 
   ordersBody.appendChild(details);
 
@@ -1194,11 +1228,16 @@ function renderAdminOrderDetails(orderId) {
     totalsLine.className = "order-total";
     totalsLine.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
 
+    const paymentMethodLine = document.createElement("p");
+    paymentMethodLine.className = "order-customer order-payment-method";
+    paymentMethodLine.textContent = `طريقة الدفع: ${PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}`;
+
     details.appendChild(header);
     details.appendChild(statusRow);
     details.appendChild(customerLine);
     details.appendChild(itemsList);
     details.appendChild(totalsLine);
+    details.appendChild(paymentMethodLine);
 
     listEl.appendChild(details);
   }
@@ -1253,6 +1292,11 @@ function renderCheckoutForm() {
   totalLine.className = "checkout-summary-total";
   totalLine.textContent = `المجموع الفرعي: ${formatPrice(total)}`;
   summary.appendChild(totalLine);
+
+  const paymentMethodLine = document.createElement("p");
+  paymentMethodLine.className = "checkout-summary-total order-payment-method";
+  paymentMethodLine.textContent = `طريقة الدفع: ${PAYMENT_METHOD_LABELS[PAYMENT_METHOD]}`;
+  summary.appendChild(paymentMethodLine);
 
   const form = document.createElement("form");
   form.className = "checkout-form";
@@ -1350,6 +1394,11 @@ function renderCheckoutSuccess(order) {
   recap.className = "checkout-summary-total";
   recap.textContent = `عدد القطع: ${order.itemCount} — الإجمالي: ${formatPrice(order.total)}`;
   successBox.appendChild(recap);
+
+  const paymentMethodLine = document.createElement("p");
+  paymentMethodLine.className = "checkout-summary-total order-payment-method";
+  paymentMethodLine.textContent = `طريقة الدفع: ${PAYMENT_METHOD_LABELS[order.paymentMethod] || order.paymentMethod}`;
+  successBox.appendChild(paymentMethodLine);
 
   const keepCodeNote = document.createElement("p");
   keepCodeNote.className = "checkout-summary-total";
@@ -1686,7 +1735,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const image = document.getElementById("admin-product-image").value.trim();
       const stock = Number(document.getElementById("admin-product-stock").value);
 
-      if (!name || !category || !image || !Number.isFinite(price) || price <= 0) {
+      if (!name || !category || !Number.isFinite(price) || price <= 0) {
         return;
       }
 

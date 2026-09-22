@@ -111,12 +111,13 @@ async function dbGetAllProductsAdmin() {
 // ============================================================
 
 // items: [{ productId, quantity }] فقط — السعر والاسم يُشتقّان من الخادم حصراً
-async function dbCreateOrderRpc(customerName, customerPhone, customerAddress, items) {
+async function dbCreateOrderRpc(customerName, customerPhone, customerAddress, items, paymentMethod) {
   const { data, error } = await supabaseClient.rpc("create_order_rpc", {
     customer_name: customerName,
     customer_phone: customerPhone,
     customer_address: customerAddress,
     items: items.map((item) => ({ product_id: item.productId, quantity: item.quantity })),
+    payment_method: paymentMethod,
   });
   if (error) throw error;
   return data;
