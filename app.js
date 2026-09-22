@@ -680,13 +680,31 @@ function createOrderFromCart(customerName, customerPhone, customerAddress) {
   return order;
 }
 
+// حالات الطلب التي يُسمح منها بالإلغاء فقط (new أو processing)
+const CANCELLABLE_ORDER_STATUSES = ["new", "processing"];
+
+// هل يمكن إلغاء طلب حالته الحالية هي statusValue؟ (لأغراض العرض في لوحة التحكم)
+function isOrderCancellable(statusValue) {
+  return CANCELLABLE_ORDER_STATUSES.includes(statusValue);
+}
+
 // تحديث حالة طلب واحد فقط عبر معرّفه، دون المساس بأي حقل آخر (العناصر، العميل، الإجمالي، إلخ)
+// الطلب الملغى نهائي: لا يُسمح بأي انتقال آخر منه. الانتقال إلى "cancelled" مسموح فقط من new/processing،
+// ويُعيد المخزون مرة واحدة بالضبط عند حدوثه فعليًا
 function updateOrderStatus(orderId, newStatus) {
   if (!ORDER_STATUSES.includes(newStatus)) return;
 
   const orders = loadOrdersFromStorage();
   const order = orders.find((o) => o.orderId === orderId);
   if (!order) return;
+
+  // الطلب الملغى نهائي - لا يُعاد فتحه ولا يُعاد إلغاؤه
+  if (order.status === "cancelled") return;
+
+  if (newStatus === "cancelled") {
+    if (!isOrderCancellable(order.status)) return; // لا يُسمح بالإلغاء من shipped أو completed
+    restoreStockForCancelledOrder(order);
+  }
 
   order.status = newStatus;
   saveOrdersToStorage(orders);
@@ -705,6 +723,23 @@ function decreaseStockAfterOrder(order) {
   saveAdminProductsToStorage(adminProducts);
   populateCategoryFilter();
   applyProductFilters();
+}
+
+// إعادة الكمية المطلوبة في كل بند من لقطة الطلب إلى مخزون المنتج الحالي المطابق (إن وُجد)
+// يُستدعى حصرًا من updateOrderStatus عند انتقال صالح وفريد إلى "cancelled" - لا يمس لقطة الطلب نفسها
+function restoreStockForCancelledOrder(order) {
+  order.items.forEach((orderItem) => {
+    const product = adminProducts.find((p) => p.id === orderItem.id);
+    if (product) {
+      product.stock = product.stock + orderItem.quantity; // إضافة فقط - لا مجال لقيمة غير صالحة
+    }
+    // إذا حُذف المنتج، يُتجاهل بأمان دون أي تأثير آخر
+  });
+
+  saveAdminProductsToStorage(adminProducts);
+  populateCategoryFilter();
+  applyProductFilters();
+  renderAdminProducts();
 }
 
 // عرض سجل الطلبات السابقة كقائمة مختصرة (قراءة وعرض فقط، بدون أي تعديل على الطلبات)
@@ -963,22 +998,35 @@ function renderAdminOrderDetails(orderId) {
     statusLabel.className = "order-status";
     statusLabel.textContent = `الحالة الحالية: ${ORDER_STATUS_LABELS[order.status] || ORDER_STATUS_LABELS[DEFAULT_ORDER_STATUS]}`;
 
-    const statusSelect = document.createElement("select");
-    statusSelect.className = "admin-order-status-select";
-    ORDER_STATUSES.forEach((statusKey) => {
-      const option = document.createElement("option");
-      option.value = statusKey;
-      option.textContent = ORDER_STATUS_LABELS[statusKey];
-      if (statusKey === order.status) option.selected = true;
-      statusSelect.appendChild(option);
-    });
-    statusSelect.addEventListener("change", (event) => {
-      updateOrderStatus(order.orderId, event.target.value);
-      renderAdminOrderDetails(order.orderId);
-    });
-
     statusRow.appendChild(statusLabel);
-    statusRow.appendChild(statusSelect);
+
+    if (order.status !== "cancelled") {
+      const statusSelect = document.createElement("select");
+      statusSelect.className = "admin-order-status-select";
+      ORDER_STATUSES.filter((statusKey) => statusKey !== "cancelled").forEach((statusKey) => {
+        const option = document.createElement("option");
+        option.value = statusKey;
+        option.textContent = ORDER_STATUS_LABELS[statusKey];
+        if (statusKey === order.status) option.selected = true;
+        statusSelect.appendChild(option);
+      });
+      statusSelect.addEventListener("change", (event) => {
+        updateOrderStatus(order.orderId, event.target.value);
+        renderAdminOrderDetails(order.orderId);
+      });
+      statusRow.appendChild(statusSelect);
+
+      if (isOrderCancellable(order.status)) {
+        const cancelBtn = document.createElement("button");
+        cancelBtn.className = "btn-remove-item";
+        cancelBtn.textContent = "إلغاء الطلب";
+        cancelBtn.addEventListener("click", () => {
+          updateOrderStatus(order.orderId, "cancelled");
+          renderAdminOrderDetails(order.orderId);
+        });
+        statusRow.appendChild(cancelBtn);
+      }
+    }
 
     const customerLine = document.createElement("p");
     customerLine.className = "order-customer";
