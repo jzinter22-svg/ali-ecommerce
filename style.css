@@ -1,3 +1,10 @@
+:root {
+  --accent: #fedd00;
+  --accent-hover: #e0c200;
+  --accent-pale: #fff7cc;
+  --black: #000000;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -55,11 +62,11 @@ body {
 
 /* Header */
 .site-header {
-  background-color: #ffffff;
-  border-bottom: 1px solid #e5e5e5;
+  background-color: var(--black);
   position: sticky;
   top: 0;
   z-index: 10;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 .header-content {
@@ -74,7 +81,7 @@ body {
 .logo {
   font-size: 1.5rem;
   font-weight: bold;
-  color: #d35400;
+  color: var(--accent);
 }
 
 .main-nav ul {
@@ -86,13 +93,13 @@ body {
 
 .main-nav a {
   text-decoration: none;
-  color: #333;
+  color: #ffffff;
   font-size: 1rem;
   transition: color 0.2s ease;
 }
 
 .main-nav a:hover {
-  color: #d35400;
+  color: var(--accent);
 }
 
 .cart-count {
@@ -101,16 +108,17 @@ body {
   padding: 0 5px;
   margin-right: 4px;
   border-radius: 10px;
-  background-color: #d35400;
-  color: #fff;
+  background-color: #1a1a1a;
+  border: 1px solid var(--accent);
+  color: var(--accent);
   font-size: 0.75rem;
-  line-height: 20px;
+  line-height: 18px;
   text-align: center;
 }
 
 /* Hero */
 .hero {
-  background-color: #fff3e9;
+  background-color: var(--accent-pale);
   padding: 60px 0;
   text-align: center;
 }
@@ -129,18 +137,19 @@ body {
 }
 
 .btn-primary {
-  background-color: #d35400;
-  color: #fff;
+  background-color: var(--accent);
+  color: #000;
   border: none;
   padding: 12px 30px;
   font-size: 1rem;
+  font-weight: 600;
   border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
 
 .btn-primary:hover {
-  background-color: #b34700;
+  background-color: var(--accent-hover);
 }
 
 /* Products */
@@ -212,8 +221,8 @@ body {
 .product-card {
   background-color: #fff;
   border: 1px solid #e5e5e5;
-  border-radius: 10px;
-  padding: 20px;
+  border-radius: 12px;
+  padding: 22px;
   text-align: center;
   transition: box-shadow 0.2s ease, transform 0.2s ease;
 }
@@ -230,21 +239,26 @@ body {
 
 .product-name {
   font-size: 1.1rem;
-  margin-bottom: 8px;
+  font-weight: 600;
+  margin-bottom: 10px;
   color: #222;
 }
 
 .product-category {
   font-size: 0.9rem;
   color: #666;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .product-price {
-  font-size: 1.1rem;
-  font-weight: bold;
-  color: #d35400;
-  margin-bottom: 15px;
+  display: inline-block;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #000;
+  background-color: var(--accent);
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-bottom: 16px;
 }
 
 .product-stock {
@@ -266,18 +280,19 @@ body {
 
 .btn-add-cart {
   width: 100%;
-  background-color: #d35400;
-  color: #fff;
+  background-color: var(--accent);
+  color: #000;
   border: none;
   padding: 10px 0;
   font-size: 0.95rem;
+  font-weight: 600;
   border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.2s ease;
 }
 
 .btn-add-cart:hover {
-  background-color: #b34700;
+  background-color: var(--accent-hover);
 }
 
 .btn-view-product-details {
@@ -285,7 +300,7 @@ body {
   background: none;
   border: 1px solid #e5e5e5;
   border-radius: 6px;
-  color: #d35400;
+  color: #000;
   padding: 8px 0;
   font-size: 0.9rem;
   cursor: pointer;
@@ -293,7 +308,7 @@ body {
 }
 
 .btn-view-product-details:hover {
-  background-color: #fff3e9;
+  background-color: var(--accent-pale);
 }
 
 .btn-favorite {
@@ -313,9 +328,9 @@ body {
 }
 
 .btn-favorite.active {
-  color: #d35400;
-  border-color: #d35400;
-  background-color: #fff3e9;
+  color: #000;
+  border-color: var(--accent);
+  background-color: var(--accent-pale);
 }
 
 /* Favorites panel */
@@ -388,9 +403,13 @@ body {
 }
 
 .product-details-price {
+  display: inline-block;
   font-size: 1.3rem;
-  font-weight: bold;
-  color: #d35400;
+  font-weight: 800;
+  color: #000;
+  background-color: var(--accent);
+  padding: 5px 14px;
+  border-radius: 6px;
   margin-bottom: 18px;
 }
 
@@ -502,7 +521,7 @@ body {
 }
 
 .btn-qty:hover {
-  background-color: #fff3e9;
+  background-color: var(--accent-pale);
 }
 
 .qty-value {
@@ -514,7 +533,7 @@ body {
 .cart-item-subtotal {
   font-size: 0.9rem;
   font-weight: bold;
-  color: #d35400;
+  color: #000;
   margin-top: 6px;
 }
 
@@ -522,14 +541,14 @@ body {
   background: none;
   border: 1px solid #e5e5e5;
   border-radius: 6px;
-  color: #b34700;
+  color: #000;
   padding: 5px 10px;
   font-size: 0.85rem;
   cursor: pointer;
 }
 
 .btn-remove-item:hover {
-  background-color: #fff3e9;
+  background-color: var(--accent-pale);
 }
 
 .cart-empty {
@@ -567,19 +586,20 @@ body {
 
 .btn-checkout {
   width: 100%;
-  background-color: #d35400;
-  color: #fff;
+  background-color: var(--accent);
+  color: #000;
   border: none;
   border-radius: 6px;
   padding: 10px 0;
   font-size: 0.95rem;
+  font-weight: 600;
   cursor: pointer;
   margin-bottom: 10px;
   transition: background-color 0.2s ease;
 }
 
 .btn-checkout:hover {
-  background-color: #b34700;
+  background-color: var(--accent-hover);
 }
 
 /* Checkout panel */
@@ -678,7 +698,7 @@ body {
 
 .checkout-success h3 {
   font-size: 1.2rem;
-  color: #d35400;
+  color: #000;
   margin-bottom: 12px;
 }
 
@@ -741,7 +761,7 @@ body {
 
 .order-id {
   font-weight: bold;
-  color: #d35400;
+  color: #000;
 }
 
 .order-customer {
@@ -766,7 +786,7 @@ body {
 
 .order-status {
   font-size: 0.85rem;
-  color: #d35400;
+  color: #000;
   font-weight: bold;
 }
 
@@ -795,14 +815,14 @@ body {
   background: none;
   border: 1px solid #e5e5e5;
   border-radius: 6px;
-  color: #d35400;
+  color: #000;
   padding: 6px 0;
   font-size: 0.85rem;
   cursor: pointer;
 }
 
 .btn-view-order-details:hover {
-  background-color: #fff3e9;
+  background-color: var(--accent-pale);
 }
 
 .order-details {
@@ -829,21 +849,25 @@ body {
 
 /* Footer */
 .site-footer {
-  background-color: #222;
-  color: #eee;
+  background-color: var(--black);
+  color: #ffffff;
   text-align: center;
   padding: 20px 0;
   margin-top: 40px;
 }
 
 .admin-link {
-  color: #d35400;
+  color: #000;
   font-size: 0.85rem;
   text-decoration: none;
 }
 
 .admin-link:hover {
   text-decoration: underline;
+}
+
+.site-footer .admin-link {
+  color: var(--accent);
 }
 
 /* Admin dashboard */
@@ -876,12 +900,12 @@ body {
 }
 
 .admin-tab-link:hover {
-  color: #d35400;
+  color: #000;
 }
 
 .admin-tab-link.active {
-  color: #d35400;
-  border-bottom-color: #d35400;
+  color: #000;
+  border-bottom-color: var(--accent);
   font-weight: bold;
 }
 
