@@ -102,7 +102,7 @@ body {
 
 .logo {
   font-size: 1.5rem;
-  font-weight: 800;
+  font-weight: 700;
   color: var(--accent);
   letter-spacing: 0.01em;
 }
@@ -169,7 +169,7 @@ body {
 
 .hero h1 {
   font-size: 2.6rem;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.25;
   margin-bottom: var(--space-3);
   color: #111;
@@ -223,7 +223,7 @@ body {
 .section-title {
   text-align: center;
   font-size: 1.8rem;
-  font-weight: 800;
+  font-weight: 700;
   margin-bottom: var(--space-5);
   color: #222;
 }
@@ -389,7 +389,7 @@ body {
   display: inline-block;
   align-self: center;
   font-size: 1.2rem;
-  font-weight: 800;
+  font-weight: 700;
   color: #000;
   background-color: var(--accent);
   padding: 5px 12px;
@@ -582,7 +582,7 @@ body {
 .product-details-price {
   display: inline-block;
   font-size: 1.3rem;
-  font-weight: 800;
+  font-weight: 700;
   color: #000;
   background-color: var(--accent);
   padding: 5px 14px;
