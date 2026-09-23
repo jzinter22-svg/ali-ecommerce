@@ -67,7 +67,7 @@ async function dbDeleteProduct(productId) {
 }
 
 // ============================================================
-// المصادقة (Admin auth only — لا حسابات للزبائن)
+// المصادقة (تسجيل دخول الأدمن بالبريد/كلمة المرور)
 // ============================================================
 
 async function dbAdminSignIn(email, password) {
@@ -104,6 +104,43 @@ async function dbGetAllProductsAdmin() {
     .order("id", { ascending: true });
   if (error) throw error;
   return data;
+}
+
+// ============================================================
+// حسابات العملاء (Customer phone OTP auth) — منفصلة تماماً عن مصادقة الأدمن.
+// تستخدم نفس عميل Supabase Auth (خانة جلسة واحدة فقط في المتصفح)، لكن
+// صلاحية الأدمن الفعلية تبقى محصورة بعضوية admin_users (مُتحقَّق منها مباشرة
+// من القاعدة الحيّة) — حساب عميل جديد لا يملك أي صلاحية أدمن تلقائياً.
+// ============================================================
+
+// إرسال رمز التحقق (OTP) لرقم هاتف - يتطلب تفعيل مزوّد SMS في Supabase؛
+// سيفشل هذا الاستدعاء حتى يُهيَّأ مزوّد حقيقي (Twilio أو أرقام اختبار)
+async function dbCustomerSendOtp(phone) {
+  const { error } = await supabaseClient.auth.signInWithOtp({ phone });
+  if (error) throw error;
+}
+
+// التحقق من الرمز المُدخَل وإنشاء الجلسة الفعلية عند التطابق
+async function dbCustomerVerifyOtp(phone, token) {
+  const { data, error } = await supabaseClient.auth.verifyOtp({ phone, token, type: "sms" });
+  if (error) throw error;
+  return data.session;
+}
+
+async function dbCustomerSignOut() {
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) throw error;
+}
+
+// هل صاحب الجلسة الحالية عضو في admin_users؟ (قراءة صفه الخاص فقط - مسموحة
+// عبر سياسة "admin can read own membership row" الموجودة أصلاً على الجدول)
+async function dbIsCurrentUserAdmin() {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const userId = sessionData && sessionData.session && sessionData.session.user && sessionData.session.user.id;
+  if (!userId) return false;
+  const { data, error } = await supabaseClient.from("admin_users").select("user_id").eq("user_id", userId).maybeSingle();
+  if (error) return false;
+  return !!data;
 }
 
 // ============================================================
@@ -146,6 +183,21 @@ async function dbLookupOrderRpc(orderCode, phone) {
 // إدارة فقط — كل الطلبات مع عناصرها
 async function dbListOrdersRpc() {
   const { data, error } = await supabaseClient.rpc("list_orders_rpc");
+  if (error) throw error;
+  return data;
+}
+
+// تُستدعى مرة واحدة فور أول تسجيل دخول ناجح لحساب جديد - تربط أي طلبات
+// ضيف سابقة بنفس رقم الهاتف (لم تُربَط بعد) بهذا الحساب، وتُعيد عددها
+async function dbClaimGuestOrdersRpc() {
+  const { data, error } = await supabaseClient.rpc("claim_guest_orders_rpc");
+  if (error) throw error;
+  return data; // عدد الطلبات المرتبطة فعلياً
+}
+
+// عميل موثَّق فقط — طلباته الخاصة (user_id = auth.uid()) مع عناصرها
+async function dbListMyOrdersRpc() {
+  const { data, error } = await supabaseClient.rpc("list_my_orders_rpc");
   if (error) throw error;
   return data;
 }

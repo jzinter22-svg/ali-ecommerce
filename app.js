@@ -1040,16 +1040,10 @@ function renderOrderLookup() {
   }
 }
 
-// عرض تفاصيل طلب واحد (كائن مُطوَّع بالفعل من normalizeRpcOrder) للزبون
-function renderOrderDetails(order) {
-  const ordersBody = document.getElementById("orders-body");
-  if (!ordersBody) return;
-
-  const panelTitle = document.getElementById("orders-panel-title");
-  if (panelTitle) panelTitle.textContent = "تفاصيل الطلب";
-
-  ordersBody.innerHTML = "";
-
+// يبني عنصر DOM لتفاصيل طلب واحد فقط (بلا لمس أي حاوية/عنوان) - مُستخرَج من
+// renderOrderDetails ليُستخدَم من عرض تفاصيل طلب الضيف وعرض طلبات حساب
+// العميل (حسابي) معاً، بنفس التنسيق والفئات تماماً، بلا تكرار
+function buildOrderDetailsElement(order) {
   const details = document.createElement("div");
   details.className = "order-details";
 
@@ -1099,7 +1093,19 @@ function renderOrderDetails(order) {
   details.appendChild(totalsLine);
   details.appendChild(paymentMethodLine);
 
-  ordersBody.appendChild(details);
+  return details;
+}
+
+// عرض تفاصيل طلب واحد (كائن مُطوَّع بالفعل من normalizeRpcOrder) للزبون
+function renderOrderDetails(order) {
+  const ordersBody = document.getElementById("orders-body");
+  if (!ordersBody) return;
+
+  const panelTitle = document.getElementById("orders-panel-title");
+  if (panelTitle) panelTitle.textContent = "تفاصيل الطلب";
+
+  ordersBody.innerHTML = "";
+  ordersBody.appendChild(buildOrderDetailsElement(order));
 
   const backBtn = document.createElement("button");
   backBtn.type = "button";
@@ -1108,6 +1114,290 @@ function renderOrderDetails(order) {
   backBtn.addEventListener("click", renderOrderLookup);
 
   ordersBody.appendChild(backBtn);
+}
+
+// ==========================================================================
+// حساب العميل (حسابي) — تسجيل دخول/تسجيل بالهاتف عبر OTP (بلا بريد/كلمة
+// مرور). منفصل تماماً عن مصادقة الأدمن وعن البحث بكود الطلب + الهاتف
+// (طلباتي) الذي يبقى متاحاً بلا أي تسجيل دخول كما هو اليوم
+// ==========================================================================
+
+// يُضبَط قبل فتح "حسابي" من بوابة الدفع فقط - إن نجح تسجيل الدخول أثناء ضبطه
+// نُكمل مباشرة إلى نافذة الدفع بدل عرض شاشة الحساب
+let redirectToCheckoutAfterLogin = false;
+
+// يطبّع رقم هاتف عراقي محلي (07xxxxxxxxx، 11 رقماً) إلى صيغة E.164
+// (+9647xxxxxxxxx) قبل إرساله لـ Supabase Auth. بلا هذا التطبيع، لو كتب
+// المستخدم رقمه بصيغته المحلية المعتادة (وهي نفس الصيغة المخزَّنة فعلياً في
+// طلبات الضيوف القديمة، مثل ORD-12) فقد يرفضه Supabase أو يخزّنه بصيغة غير
+// متوقَّعة، فتفشل مطابقة claim_guest_orders_rpc لاحقاً رغم تطابق الرقم فعلياً
+function normalizeIraqiPhone(input) {
+  const digits = input.replace(/\D/g, "");
+  if (digits.length === 11 && digits.startsWith("0")) {
+    return "+964" + digits.slice(1);
+  }
+  if (digits.length === 10 && digits.startsWith("7")) {
+    return "+964" + digits;
+  }
+  if (digits.length === 13 && digits.startsWith("964")) {
+    return "+" + digits;
+  }
+  return input.trim();
+}
+
+// شاشة الدخول/التسجيل: إدخال الهاتف لإرسال رمز التحقق
+function renderAccountAuthGate() {
+  const accountBody = document.getElementById("account-body");
+  if (!accountBody) return;
+
+  accountBody.innerHTML = "";
+
+  const intro = document.createElement("p");
+  intro.className = "order-customer";
+  intro.textContent = "سجّل دخولك برقم هاتفك لعرض طلباتك وإتمام الشراء.";
+  accountBody.appendChild(intro);
+
+  const form = document.createElement("form");
+  form.className = "checkout-form account-auth-form";
+
+  const phoneLabel = document.createElement("label");
+  phoneLabel.textContent = "رقم الهاتف";
+  const phoneInput = document.createElement("input");
+  phoneInput.type = "tel";
+  phoneInput.name = "phone";
+  phoneInput.required = true;
+  phoneInput.placeholder = "07xxxxxxxxx";
+
+  const sendBtn = document.createElement("button");
+  sendBtn.type = "submit";
+  sendBtn.className = "btn-primary";
+  sendBtn.textContent = "إرسال رمز التحقق";
+
+  form.appendChild(phoneLabel);
+  form.appendChild(phoneInput);
+  form.appendChild(sendBtn);
+
+  const errorLine = document.createElement("p");
+  errorLine.className = "checkout-stock-error";
+  errorLine.hidden = true;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    errorLine.hidden = true;
+    sendBtn.disabled = true;
+    sendBtn.textContent = "جارٍ الإرسال...";
+
+    try {
+      const normalizedPhone = normalizeIraqiPhone(phoneInput.value);
+      await dbCustomerSendOtp(normalizedPhone);
+      renderAccountOtpStep(normalizedPhone);
+      return;
+    } catch (error) {
+      // متوقَّع حالياً بلا مزوّد SMS حقيقي مُهيَّأ على المشروع (Twilio أو أرقام
+      // اختبار Supabase) - هذا ليس عطلاً في الكود، بل حداً حقيقياً غير مُهيَّأ بعد
+      errorLine.textContent = "تعذّر إرسال رمز التحقق — مزوّد الرسائل غير مُهيّأ بعد. " + error.message;
+      errorLine.hidden = false;
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.textContent = "إرسال رمز التحقق";
+    }
+  });
+
+  accountBody.appendChild(form);
+  accountBody.appendChild(errorLine);
+}
+
+// شاشة إدخال رمز التحقق بعد إرسال الرمز بنجاح
+function renderAccountOtpStep(phone) {
+  const accountBody = document.getElementById("account-body");
+  if (!accountBody) return;
+
+  accountBody.innerHTML = "";
+
+  const info = document.createElement("p");
+  info.className = "order-customer";
+  info.textContent = `أُرسل رمز التحقق إلى ${phone}`;
+  accountBody.appendChild(info);
+
+  const form = document.createElement("form");
+  form.className = "checkout-form account-auth-form";
+
+  const codeLabel = document.createElement("label");
+  codeLabel.textContent = "رمز التحقق";
+  const codeInput = document.createElement("input");
+  codeInput.type = "text";
+  codeInput.name = "otp";
+  codeInput.inputMode = "numeric";
+  codeInput.required = true;
+
+  const verifyBtn = document.createElement("button");
+  verifyBtn.type = "submit";
+  verifyBtn.className = "btn-primary";
+  verifyBtn.textContent = "تحقق";
+
+  form.appendChild(codeLabel);
+  form.appendChild(codeInput);
+  form.appendChild(verifyBtn);
+
+  const errorLine = document.createElement("p");
+  errorLine.className = "checkout-stock-error";
+  errorLine.hidden = true;
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    errorLine.hidden = true;
+    verifyBtn.disabled = true;
+    verifyBtn.textContent = "جارٍ التحقق...";
+
+    try {
+      await dbCustomerVerifyOtp(phone, codeInput.value.trim());
+
+      let linkedCount = 0;
+      try {
+        linkedCount = await dbClaimGuestOrdersRpc();
+      } catch (claimError) {
+        // فشل ربط الطلبات القديمة لا يجب أن يمنع نجاح تسجيل الدخول نفسه
+      }
+
+      if (redirectToCheckoutAfterLogin) {
+        redirectToCheckoutAfterLogin = false;
+        const accountOverlay = document.getElementById("account-overlay");
+        const checkoutOverlay = document.getElementById("checkout-overlay");
+        if (accountOverlay) accountOverlay.hidden = true;
+        renderCheckoutForm(phone);
+        if (checkoutOverlay) checkoutOverlay.hidden = false;
+      } else {
+        await renderAccountLoggedIn(linkedCount);
+      }
+    } catch (error) {
+      errorLine.textContent = "رمز غير صحيح أو منتهي الصلاحية: " + error.message;
+      errorLine.hidden = false;
+    } finally {
+      verifyBtn.disabled = false;
+      verifyBtn.textContent = "تحقق";
+    }
+  });
+
+  const backBtn = document.createElement("button");
+  backBtn.type = "button";
+  backBtn.className = "btn-back-to-orders";
+  backBtn.textContent = "→ تغيير رقم الهاتف";
+  backBtn.addEventListener("click", renderAccountAuthGate);
+
+  accountBody.appendChild(form);
+  accountBody.appendChild(errorLine);
+  accountBody.appendChild(backBtn);
+}
+
+// شاشة الحساب بعد تسجيل الدخول: رقم الهاتف + زر الخروج + قائمة الطلبات
+async function renderAccountLoggedIn(justLinkedCount) {
+  const accountBody = document.getElementById("account-body");
+  if (!accountBody) return;
+
+  const session = await dbGetSession();
+  accountBody.innerHTML = "";
+
+  const header = document.createElement("div");
+  header.className = "order-card-header";
+
+  const phoneEl = document.createElement("span");
+  phoneEl.className = "order-id";
+  phoneEl.textContent = (session && session.user && session.user.phone) || "";
+
+  const logoutBtn = document.createElement("button");
+  logoutBtn.type = "button";
+  logoutBtn.className = "btn-remove-item";
+  logoutBtn.innerHTML = `${ICONS.trash}<span>تسجيل الخروج</span>`;
+  logoutBtn.addEventListener("click", async () => {
+    await dbCustomerSignOut();
+    renderAccountAuthGate();
+  });
+
+  header.appendChild(phoneEl);
+  header.appendChild(logoutBtn);
+  accountBody.appendChild(header);
+
+  if (justLinkedCount) {
+    const linkedMsg = document.createElement("p");
+    linkedMsg.className = "order-status";
+    linkedMsg.textContent = `تم ربط ${justLinkedCount} طلب سابق بحسابك.`;
+    accountBody.appendChild(linkedMsg);
+  }
+
+  const listTitle = document.createElement("h3");
+  listTitle.textContent = "طلباتي";
+  accountBody.appendChild(listTitle);
+
+  const listWrapper = document.createElement("div");
+  listWrapper.appendChild(createLoadingIndicator());
+  accountBody.appendChild(listWrapper);
+
+  try {
+    const raw = await dbListMyOrdersRpc();
+    listWrapper.innerHTML = "";
+
+    if (!raw || raw.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "cart-empty";
+      empty.textContent = "لا توجد طلبات على حسابك بعد.";
+      listWrapper.appendChild(empty);
+      return;
+    }
+
+    raw.forEach((rawOrder) => {
+      const order = normalizeRpcOrder(rawOrder);
+      const row = document.createElement("div");
+      row.className = "order-card";
+
+      const codeEl = document.createElement("span");
+      codeEl.className = "order-id";
+      codeEl.textContent = order.orderId;
+
+      const viewBtn = document.createElement("button");
+      viewBtn.type = "button";
+      viewBtn.className = "btn-view-order-details";
+      viewBtn.textContent = "عرض";
+      viewBtn.addEventListener("click", () => {
+        accountBody.innerHTML = "";
+        accountBody.appendChild(buildOrderDetailsElement(order));
+
+        const backBtn = document.createElement("button");
+        backBtn.type = "button";
+        backBtn.className = "btn-back-to-orders";
+        backBtn.textContent = "→ العودة إلى حسابي";
+        backBtn.addEventListener("click", () => renderAccountLoggedIn(0));
+        accountBody.appendChild(backBtn);
+      });
+
+      row.appendChild(codeEl);
+      row.appendChild(viewBtn);
+      listWrapper.appendChild(row);
+    });
+  } catch (error) {
+    listWrapper.innerHTML = "";
+    const errEl = document.createElement("p");
+    errEl.className = "cart-empty";
+    errEl.textContent = "تعذّر تحميل طلباتك: " + error.message;
+    listWrapper.appendChild(errEl);
+  }
+}
+
+// يُقرِّر أي شاشة تُعرَض عند فتح نافذة "حسابي" حسب وجود جلسة حالية أم لا
+async function renderAccountOverlay() {
+  // تعذّر التحقق من الجلسة (مشكلة شبكة مثلاً) يُعامَل كعدم تسجيل دخول - نعرض
+  // شاشة الدخول دوماً بدل ترك النافذة بلا أي محتوى إطلاقاً
+  let session = null;
+  try {
+    session = await dbGetSession();
+  } catch (error) {
+    session = null;
+  }
+
+  if (session) {
+    await renderAccountLoggedIn(0);
+  } else {
+    renderAccountAuthGate();
+  }
 }
 
 // ==========================================================================
@@ -1322,7 +1612,10 @@ function renderAdminOrderDetails(orderId) {
 }
 
 // عرض مراجعة الطلب (بنود السلة الحالية + نموذج بيانات العميل) داخل نافذة الطلب
-function renderCheckoutForm() {
+// prefillPhone اختياري - هاتف حساب العميل الموثَّق (إن وُجدت جلسة)، يُملأ في
+// الحقل مسبقاً لتفادي إعادة كتابته بعد أن أدخله المستخدم أصلاً عبر OTP، مع
+// إبقائه قابلاً للتعديل ودون أي تغيير في توقيع create_order_rpc نفسه
+function renderCheckoutForm(prefillPhone) {
   const checkoutBody = document.getElementById("checkout-body");
   if (!checkoutBody) return;
 
@@ -1385,6 +1678,7 @@ function renderCheckoutForm() {
   phoneInput.type = "tel";
   phoneInput.name = "customerPhone";
   phoneInput.required = true;
+  if (prefillPhone) phoneInput.value = prefillPhone;
 
   const addressLabel = document.createElement("label");
   addressLabel.textContent = "عنوان التوصيل";
@@ -1490,13 +1784,16 @@ function renderCheckoutSuccess(order) {
 }
 
 // ==========================================================================
-// مصادقة الأدمن — حساب واحد أو أكثر تُدار يدويًا عبر Supabase Auth، منفصلة تمامًا
-// عن الزبائن (بلا حسابات زبائن إطلاقًا في هذا المتجر)
+// مصادقة الأدمن — حساب واحد أو أكثر تُدار يدويًا عبر جدول admin_users، منفصلة
+// تمامًا عن حسابات الزبائن (تسجيل دخول بالهاتف عبر OTP، أعلاه). كلاهما يستخدم
+// نفس عميل Supabase Auth (خانة جلسة واحدة في المتصفح)، لذا وجود أي جلسة وحده
+// لا يعني أدمن إطلاقًا - يجب التحقق من عضوية admin_users فعلياً أيضاً
 // ==========================================================================
 
 async function isAdminLoggedIn() {
   const session = await dbGetSession();
-  return !!session;
+  if (!session) return false;
+  return await dbIsCurrentUserAdmin();
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -1581,6 +1878,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const ordersToggle = document.getElementById("orders-toggle");
   const ordersOverlay = document.getElementById("orders-overlay");
   const closeOrdersBtn = document.getElementById("close-orders");
+  const accountToggle = document.getElementById("account-toggle");
+  const accountOverlay = document.getElementById("account-overlay");
+  const closeAccountBtn = document.getElementById("close-account");
 
   if (clearCartBtn) {
     clearCartBtn.addEventListener("click", clearCart);
@@ -1604,9 +1904,29 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   if (checkoutBtn && checkoutOverlay && closeCheckoutBtn && cartOverlay) {
-    checkoutBtn.addEventListener("click", () => {
+    checkoutBtn.addEventListener("click", async () => {
+      // بوابة إلزامية: لا إتمام طلب بلا تسجيل دخول (تسجيل دخول/حساب جديد
+      // بالهاتف عبر OTP) - الضيف يُعاد توجيهه إلى "حسابي" بدل نافذة الدفع.
+      // تعذّر التحقق من الجلسة (مشكلة شبكة) يُعامَل كعدم تسجيل دخول أيضاً -
+      // بوابة آمنة افتراضياً بدل أن يفشل الزر بصمت بلا أي رد فعل
+      let session = null;
+      try {
+        session = await dbGetSession();
+      } catch (error) {
+        session = null;
+      }
+      if (!session) {
+        cartOverlay.hidden = true;
+        if (accountOverlay) {
+          redirectToCheckoutAfterLogin = true;
+          renderAccountAuthGate();
+          accountOverlay.hidden = false;
+        }
+        return;
+      }
+
       cartOverlay.hidden = true;
-      renderCheckoutForm();
+      renderCheckoutForm(session && session.user && session.user.phone);
       checkoutOverlay.hidden = false;
     });
 
@@ -1635,6 +1955,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     ordersOverlay.addEventListener("click", (event) => {
       if (event.target === ordersOverlay) {
         ordersOverlay.hidden = true;
+      }
+    });
+  }
+
+  if (accountToggle && accountOverlay && closeAccountBtn) {
+    accountToggle.addEventListener("click", async (event) => {
+      event.preventDefault();
+      redirectToCheckoutAfterLogin = false;
+      await renderAccountOverlay();
+      accountOverlay.hidden = false;
+    });
+
+    closeAccountBtn.addEventListener("click", () => {
+      accountOverlay.hidden = true;
+    });
+
+    accountOverlay.addEventListener("click", (event) => {
+      if (event.target === accountOverlay) {
+        accountOverlay.hidden = true;
       }
     });
   }
@@ -1723,8 +2062,10 @@ document.addEventListener("DOMContentLoaded", async () => {
       mainContent.hidden = true;
       adminDashboardSection.hidden = false;
 
+      // فحص عضوية admin_users فعلياً، وليس مجرد وجود أي جلسة - حساب عميل
+      // مسجَّل دخوله بالهاتف لا يجب أن يرى واجهة لوحة التحكم إطلاقاً
       const session = await dbGetSession();
-      if (session) {
+      if (session && (await dbIsCurrentUserAdmin())) {
         await enterAuthenticatedAdminView(session);
       } else {
         showAdminLoginView();
@@ -1880,10 +2221,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     adminFormCancelBtn.addEventListener("click", cancelAdminEdit);
   }
 
-  // إبقاء واجهة الأدمن متزامنة مع حالة الجلسة الفعلية (مثال: انتهاء صلاحية الجلسة)
+  // إبقاء واجهة الأدمن وواجهة "حسابي" متزامنتين مع حالة الجلسة الفعلية
+  // (مثال: انتهاء صلاحية الجلسة، أو تسجيل الخروج من تبويب آخر)
   dbOnAuthStateChange((session) => {
     if (!session && adminAuthenticatedArea && !adminAuthenticatedArea.hidden) {
       showAdminLoginView();
+    }
+    const accountOverlayEl = document.getElementById("account-overlay");
+    if (accountOverlayEl && !accountOverlayEl.hidden) {
+      renderAccountOverlay();
     }
   });
 });

@@ -953,6 +953,30 @@ body {
   padding: 15px 20px 20px;
 }
 
+.account-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 110;
+  padding: 20px;
+}
+
+.account-overlay[hidden] {
+  display: none;
+}
+
+.account-panel {
+  max-width: 480px;
+}
+
+.account-body {
+  overflow-y: auto;
+  padding: 15px 20px 20px;
+}
+
 .order-card {
   border: 1px solid #e5e5e5;
   border-radius: 8px;
