@@ -41,6 +41,38 @@ function createLoadingIndicator() {
   return wrapper;
 }
 
+// أيقونات SVG صغيرة ثابتة (بلا أي بيانات من المستخدم/المنتج) تُستخدم كنص داخلي
+// لبعض الأزرار المتكررة، لتفادي تكرار نفس الترميز في كل مكان يُنشأ فيه الزر
+const ICONS = {
+  heartOutline:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.716-4.35-9.428-8.485C.4 9.5 1.5 5.5 5 4.5c2-.6 3.8.2 5 1.8 1.2-1.6 3-2.4 5-1.8 3.5 1 4.6 5 2.428 8.015C18.716 16.65 12 21 12 21z"></path></svg>',
+  heartFilled:
+    '<svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.716-4.35-9.428-8.485C.4 9.5 1.5 5.5 5 4.5c2-.6 3.8.2 5 1.8 1.2-1.6 3-2.4 5-1.8 3.5 1 4.6 5 2.428 8.015C18.716 16.65 12 21 12 21z"></path></svg>',
+  cart:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"></circle><circle cx="18" cy="20" r="1.5"></circle><path d="M2 3h3l2 12h11l2-8H6"></path></svg>',
+  minus:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
+  plus:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"></line><line x1="12" y1="5" x2="12" y2="19"></line></svg>',
+  trash:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>',
+};
+
+// تحديث محتوى زر المفضلة (أيقونة قلب + نص) حسب الحالة الحالية — نفس الترميز
+// يُستخدَم في بطاقة المنتج وفي نافذة تفاصيل المنتج لتفادي التكرار
+function applyFavoriteButtonState(button, active) {
+  button.className = active ? "btn-favorite active" : "btn-favorite";
+  button.innerHTML = active
+    ? `${ICONS.heartFilled}<span>إزالة من المفضلة</span>`
+    : `${ICONS.heartOutline}<span>أضف للمفضلة</span>`;
+}
+
+// تحديث محتوى زر إنقاص/زيادة الكمية (أيقونة ناقص/زائد) — نفس الترميز يُستخدَم في
+// نافذة تفاصيل المنتج وفي عناصر السلة لتفادي التكرار
+function applyQtyButtonContent(button, direction) {
+  button.innerHTML = direction === "increase" ? ICONS.plus : ICONS.minus;
+}
+
 // إنشاء عنصر DOM واحد يمثل بطاقة منتج
 function createProductCard(product) {
   const card = document.createElement("div");
@@ -67,13 +99,13 @@ function createProductCard(product) {
   stockInfo.textContent = product.stock > 0 ? `متوفر — ${product.stock} قطع` : "نفد المخزون";
 
   const favoriteBtn = document.createElement("button");
-  favoriteBtn.className = isFavorite(product.id) ? "btn-favorite active" : "btn-favorite";
-  favoriteBtn.textContent = isFavorite(product.id) ? "♥ إزالة من المفضلة" : "♡ أضف للمفضلة";
+  applyFavoriteButtonState(favoriteBtn, isFavorite(product.id));
   favoriteBtn.addEventListener("click", () => toggleFavorite(product.id));
 
   const addToCartBtn = document.createElement("button");
   addToCartBtn.className = "btn-add-cart";
-  addToCartBtn.textContent = product.stock > 0 ? "أضف إلى السلة" : "نفد المخزون";
+  addToCartBtn.innerHTML =
+    product.stock > 0 ? `${ICONS.cart}<span>أضف إلى السلة</span>` : "<span>نفد المخزون</span>";
   addToCartBtn.disabled = product.stock <= 0;
   addToCartBtn.addEventListener("click", () => addToCart(product.id));
 
@@ -219,8 +251,7 @@ function renderProductDetails(productId) {
   price.textContent = formatPrice(product.price);
 
   const favoriteBtn = document.createElement("button");
-  favoriteBtn.className = isFavorite(product.id) ? "btn-favorite active" : "btn-favorite";
-  favoriteBtn.textContent = isFavorite(product.id) ? "♥ إزالة من المفضلة" : "♡ أضف للمفضلة";
+  applyFavoriteButtonState(favoriteBtn, isFavorite(product.id));
   favoriteBtn.addEventListener("click", () => {
     toggleFavorite(product.id);
     renderProductDetails(product.id);
@@ -231,7 +262,7 @@ function renderProductDetails(productId) {
 
   const decreaseBtn = document.createElement("button");
   decreaseBtn.className = "btn-qty";
-  decreaseBtn.textContent = "−";
+  applyQtyButtonContent(decreaseBtn, "decrease");
   decreaseBtn.setAttribute("aria-label", "إنقاص الكمية المطلوبة");
 
   const qtyValue = document.createElement("span");
@@ -240,7 +271,7 @@ function renderProductDetails(productId) {
 
   const increaseBtn = document.createElement("button");
   increaseBtn.className = "btn-qty";
-  increaseBtn.textContent = "+";
+  applyQtyButtonContent(increaseBtn, "increase");
   increaseBtn.setAttribute("aria-label", "زيادة الكمية المطلوبة");
 
   increaseBtn.disabled = productDetailsQuantity >= product.stock;
@@ -271,7 +302,8 @@ function renderProductDetails(productId) {
 
   const addToCartBtn = document.createElement("button");
   addToCartBtn.className = "btn-add-cart";
-  addToCartBtn.textContent = product.stock > 0 ? "أضف إلى السلة" : "نفد المخزون";
+  addToCartBtn.innerHTML =
+    product.stock > 0 ? `${ICONS.cart}<span>أضف إلى السلة</span>` : "<span>نفد المخزون</span>";
   addToCartBtn.disabled = product.stock <= 0;
   addToCartBtn.addEventListener("click", () => {
     for (let i = 0; i < productDetailsQuantity; i++) {
@@ -507,7 +539,7 @@ function renderCart() {
 
     const decreaseBtn = document.createElement("button");
     decreaseBtn.className = "btn-qty";
-    decreaseBtn.textContent = "−";
+    applyQtyButtonContent(decreaseBtn, "decrease");
     decreaseBtn.setAttribute("aria-label", "إنقاص الكمية");
     decreaseBtn.addEventListener("click", () => decreaseQuantity(item.id));
 
@@ -517,7 +549,7 @@ function renderCart() {
 
     const increaseBtn = document.createElement("button");
     increaseBtn.className = "btn-qty";
-    increaseBtn.textContent = "+";
+    applyQtyButtonContent(increaseBtn, "increase");
     increaseBtn.setAttribute("aria-label", "زيادة الكمية");
     increaseBtn.addEventListener("click", () => addToCart(item.id));
 
@@ -536,7 +568,7 @@ function renderCart() {
 
     const removeBtn = document.createElement("button");
     removeBtn.className = "btn-remove-item";
-    removeBtn.textContent = "إزالة";
+    removeBtn.innerHTML = `${ICONS.trash}<span>إزالة</span>`;
     removeBtn.addEventListener("click", () => removeFromCart(item.id));
 
     row.appendChild(image);
@@ -1808,6 +1840,17 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (productsSection) productsSection.scrollIntoView({ behavior: "smooth" });
       const categoryFilterSelect = document.getElementById("category-filter");
       if (categoryFilterSelect) categoryFilterSelect.focus();
+    });
+  }
+
+  // زر "تصفح المنتجات" في البانر الرئيسي — لم يكن له أي معالج نقر إطلاقًا من قبل
+  // (لا يفعل شيئًا)؛ يُستخدم نفس منطق التمرير المستخدَم في رابط "المنتجات"
+  const heroCtaBtn = document.getElementById("hero-cta");
+
+  if (heroCtaBtn) {
+    heroCtaBtn.addEventListener("click", () => {
+      const productsSection = document.getElementById("products");
+      if (productsSection) productsSection.scrollIntoView({ behavior: "smooth" });
     });
   }
 
