@@ -1771,6 +1771,46 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
+  // الرئيسية والمنتجات: روابط تصفّح داخل المتجر — تُعيد العرض من لوحة الأدمن
+  // إن كانت مفتوحة (نفس منطق backToStoreLink)، ثم تُمرّر إلى الموضع المطلوب
+  const navHomeLink = document.getElementById("nav-home");
+  const navProductsLink = document.getElementById("nav-products");
+
+  if (navHomeLink && adminDashboardSection && mainContent) {
+    navHomeLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      adminDashboardSection.hidden = true;
+      mainContent.hidden = false;
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  if (navProductsLink && adminDashboardSection && mainContent) {
+    navProductsLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      adminDashboardSection.hidden = true;
+      mainContent.hidden = false;
+      const productsSection = document.getElementById("products");
+      if (productsSection) productsSection.scrollIntoView({ behavior: "smooth" });
+    });
+  }
+
+  // الأقسام: لا توجد صفحة أقسام مستقلة — تُمرّر إلى قسم المنتجات وتُركّز على
+  // قائمة تصفية الفئة الموجودة أصلًا فيه (بالاتفاق مع طلب المستخدم)
+  const navCategoriesLink = document.getElementById("nav-categories");
+
+  if (navCategoriesLink && adminDashboardSection && mainContent) {
+    navCategoriesLink.addEventListener("click", (event) => {
+      event.preventDefault();
+      adminDashboardSection.hidden = true;
+      mainContent.hidden = false;
+      const productsSection = document.getElementById("products");
+      if (productsSection) productsSection.scrollIntoView({ behavior: "smooth" });
+      const categoryFilterSelect = document.getElementById("category-filter");
+      if (categoryFilterSelect) categoryFilterSelect.focus();
+    });
+  }
+
   if (adminProductForm) {
     adminProductForm.addEventListener("submit", async (event) => {
       event.preventDefault();
